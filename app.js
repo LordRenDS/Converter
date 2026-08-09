@@ -26,6 +26,7 @@ if (typeof document !== 'undefined') {
         const statusText = document.getElementById("status-text");
         const titleInput = document.getElementById("title-input");
         const authorInput = document.getElementById("author-input");
+        const coverInput = document.getElementById("cover-input");
 
         const optimizeCheckbox = document.getElementById("optimize-checkbox");
         const directionSelect = document.getElementById("direction-select");
@@ -226,7 +227,7 @@ if (typeof document !== 'undefined') {
 
         // EPUB Generation logic
 
-        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, onProgress) {
+        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, customCoverFile, onProgress) {
             const epubZip = new JSZip();
 
             epubZip.file("mimetype", "application/epub+zip");
@@ -246,6 +247,40 @@ if (typeof document !== 'undefined') {
             let manifestItems = "";
             let spineItems = "";
             let globalImageCounter = 0;
+            let coverId = null;
+
+            if (customCoverFile) {
+                // Process custom cover
+                let ext = customCoverFile.name.split('.').pop().toLowerCase();
+                let mimeType = ext === 'jpg' ? 'jpeg' : ext;
+                let blobData = customCoverFile; // It's already a File/Blob
+
+                const imgName = `cover.${ext}`;
+                imagesFolder.file(imgName, blobData);
+
+                coverId = 'cover-image';
+                manifestItems += `<item id="${coverId}" href="Images/${imgName}" media-type="image/${mimeType}" properties="cover-image"/>\n`;
+
+                const coverPageName = 'cover.xhtml';
+                const xhtml = `<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>Cover</title>
+  <style type="text/css">
+    body { margin: 0; padding: 0; text-align: center; }
+    img { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <img src="../Images/${imgName}" alt="Cover" />
+</body>
+</html>`;
+                textFolder.file(coverPageName, xhtml);
+
+                const coverPageId = 'cover-page';
+                manifestItems += `<item id="${coverPageId}" href="Text/${coverPageName}" media-type="application/xhtml+xml"/>\n`;
+                spineItems += `<itemref idref="${coverPageId}"/>\n`;
+            }
 
             for (let i = 0; i < images.length; i++) {
                 const imgData = images[i];
@@ -288,7 +323,15 @@ if (typeof document !== 'undefined') {
                     imagesFolder.file(imgName, procImg.blob);
 
                     const id = `img${globalImageCounter}`;
-                    manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"/>
+                    let properties = '';
+                    if (!customCoverFile && globalImageCounter === 0 && procImg.suffix === '') {
+                        properties = ' properties="cover-image"';
+                        coverId = id;
+                    } else if (!customCoverFile && globalImageCounter === 0 && processedImages.indexOf(procImg) === 0) {
+                        properties = ' properties="cover-image"';
+                        coverId = id;
+                    }
+                    manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"${properties}/>
 `;
 
                     const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
@@ -332,6 +375,7 @@ if (typeof document !== 'undefined') {
     <dc:creator opf:role="aut">${author.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</dc:creator>
     <dc:language>en</dc:language>
     <dc:identifier id="BookId">urn:uuid:${crypto.randomUUID ? crypto.randomUUID() : '12345-67890'}</dc:identifier>
+    ${coverId ? `<meta name="cover" content="${coverId}"/>` : ''}
   </metadata>
   <manifest>
     ${manifestItems}
@@ -391,6 +435,7 @@ if (typeof document !== 'undefined') {
             const readingDirection = directionSelect ? directionSelect.value : 'ltr';
             const splitFormat = formatSelect ? formatSelect.value : 'original';
             const isMergeMode = mergeCheckbox && mergeCheckbox.checked;
+            const customCoverFile = coverInput && coverInput.files.length > 0 ? coverInput.files[0] : null;
 
             progressContainer.style.display = "block";
             progressFill.style.backgroundColor = 'var(--primary-color)';
@@ -420,6 +465,7 @@ if (typeof document !== 'undefined') {
                         isOptimizeEnabled,
                         readingDirection,
                         splitFormat,
+                        customCoverFile,
                         (percent) => setProgress(percent, "Merging and creating EPUB...")
                     );
 
@@ -448,6 +494,7 @@ if (typeof document !== 'undefined') {
                             isOptimizeEnabled,
                             readingDirection,
                             splitFormat,
+                            customCoverFile,
                             (percent) => setProgress(percent, `Processing file ${i+1}/${currentFiles.length}...`)
                         );
 

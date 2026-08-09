@@ -212,3 +212,24 @@ button:disabled {
     background: none;
     color: #cc0000;
 }
+
+.cover-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    text-align: left;
+    margin-top: 5px;
+}
+
+.cover-input-group label {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.cover-input-group input[type="file"] {
+    padding: 5px;
+    font-size: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: #fff;
+}
