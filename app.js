@@ -32,6 +32,10 @@ if (typeof document !== 'undefined') {
         const formatSelect = document.getElementById("format-select");
         const formatGroup = document.getElementById("format-group");
 
+        const fileList = document.getElementById("file-list");
+        const mergeGroup = document.getElementById("merge-group");
+        const mergeCheckbox = document.getElementById("merge-checkbox");
+
         if (optimizeCheckbox && formatGroup && formatSelect) {
             optimizeCheckbox.addEventListener("change", (e) => {
                 if (e.target.checked) {
@@ -46,17 +50,98 @@ if (typeof document !== 'undefined') {
             });
         }
 
-        let currentFile = null;
+        let currentFiles = [];
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            if (currentFiles.length === 0) {
+                fileList.style.display = 'none';
+                convertBtn.disabled = true;
+                mergeGroup.style.display = 'none';
+                return;
+            }
+
+            fileList.style.display = 'block';
+            convertBtn.disabled = false;
+
+            if (currentFiles.length > 1) {
+                mergeGroup.style.display = 'flex';
+            } else {
+                mergeGroup.style.display = 'none';
+                mergeCheckbox.checked = false;
+            }
+
+            currentFiles.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.draggable = true;
+                li.dataset.index = index;
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = file.name;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '×';
+                removeBtn.className = 'remove-btn';
+                removeBtn.onclick = () => {
+                    currentFiles.splice(index, 1);
+                    updateFileList();
+                };
+
+                li.appendChild(nameSpan);
+                li.appendChild(removeBtn);
+
+                // Drag and drop events for reordering
+                li.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', index);
+                    setTimeout(() => li.style.opacity = '0.5', 0);
+                });
+
+                li.addEventListener('dragend', () => {
+                    li.style.opacity = '1';
+                });
+
+                li.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    li.classList.add('drag-over');
+                });
+
+                li.addEventListener('dragleave', () => {
+                    li.classList.remove('drag-over');
+                });
+
+                li.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    li.classList.remove('drag-over');
+                    const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                    const targetIndex = index;
+
+                    if (draggedIndex !== targetIndex) {
+                        const draggedFile = currentFiles[draggedIndex];
+                        currentFiles.splice(draggedIndex, 1);
+                        currentFiles.splice(targetIndex, 0, draggedFile);
+                        updateFileList();
+                    }
+                });
+
+                fileList.appendChild(li);
+            });
+        }
+
+        function handleFiles(files) {
+            const newFiles = Array.from(files).filter(file => file.name.toLowerCase().endsWith('.cbz') || file.name.toLowerCase().endsWith('.zip'));
+            if (newFiles.length > 0) {
+                // Add and sort naturally
+                currentFiles = [...currentFiles, ...newFiles];
+                const collator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+                currentFiles.sort((a, b) => collator.compare(a.name, b.name));
+                updateFileList();
+            }
+        }
+
 
         // Drag & Drop logic
         dropZoneElement.addEventListener("click", () => {
             inputElement.click();
-        });
-
-        inputElement.addEventListener("change", (e) => {
-            if (inputElement.files.length) {
-                updateThumbnail(dropZoneElement, inputElement.files[0]);
-            }
         });
 
         dropZoneElement.addEventListener("dragover", (e) => {
@@ -72,35 +157,20 @@ if (typeof document !== 'undefined') {
 
         dropZoneElement.addEventListener("drop", (e) => {
             e.preventDefault();
-            if (e.dataTransfer.files.length) {
-                inputElement.files = e.dataTransfer.files;
-                updateThumbnail(dropZoneElement, e.dataTransfer.files[0]);
-            }
             dropZoneElement.classList.remove("drop-zone--over");
+
+            if (e.dataTransfer.files.length) {
+                handleFiles(e.dataTransfer.files);
+            }
         });
 
-        function updateThumbnail(dropZoneElement, file) {
-            let prompt = dropZoneElement.querySelector(".drop-zone__prompt");
-            if (dropZoneElement.querySelector(".drop-zone__thumb")) {
-                dropZoneElement.querySelector(".drop-zone__thumb").remove();
+        inputElement.addEventListener("change", (e) => {
+            if (inputElement.files.length) {
+                handleFiles(inputElement.files);
             }
-            if (prompt) {
-                prompt.style.display = "none";
-            }
-
-            const thumbElement = document.createElement("div");
-            thumbElement.classList.add("drop-zone__thumb");
-            thumbElement.textContent = file.name;
-            dropZoneElement.appendChild(thumbElement);
-
-            currentFile = file;
-            convertBtn.disabled = false;
-
-            // Auto-fill title if empty
-            if (!titleInput.value) {
-                titleInput.value = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-            }
-        }
+            // Reset input so selecting the same file again triggers change event
+            inputElement.value = '';
+        });
 
         function setProgress(percent, text) {
             progressContainer.style.display = "block";
@@ -155,115 +225,74 @@ if (typeof document !== 'undefined') {
         }
 
         // EPUB Generation logic
-        convertBtn.addEventListener("click", async () => {
-            if (!currentFile) return;
 
-            convertBtn.disabled = true;
-            try {
-                const title = titleInput.value || "Unknown Title";
-                const author = authorInput.value || "Unknown Author";
-                const isOptimizeEnabled = optimizeCheckbox ? optimizeCheckbox.checked : false;
-                const readingDirection = directionSelect ? directionSelect.value : 'ltr';
-                const splitFormat = formatSelect ? formatSelect.value : 'original';
+        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, onProgress) {
+            const epubZip = new JSZip();
 
-                setProgress(10, "Reading CBZ file...");
+            epubZip.file("mimetype", "application/epub+zip");
 
-                const jszip = new JSZip();
-                const cbzData = await jszip.loadAsync(currentFile);
-
-                // Filter images
-                const imageFiles = [];
-                cbzData.forEach((relativePath, file) => {
-                    if (!file.dir && relativePath.match(/\.(jpe?g|png|gif|webp)$/i)) {
-                        imageFiles.push(file);
-                    }
-                });
-
-                if (imageFiles.length === 0) {
-                    throw new Error("No images found in the archive.");
-                }
-
-                // Sort naturally
-                const collator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
-                imageFiles.sort((a, b) => collator.compare(a.name, b.name));
-
-                setProgress(30, `Found ${imageFiles.length} images. Processing and Creating EPUB...`);
-
-                const epubZip = new JSZip();
-
-                // 1. mimetype (must be uncompressed in standard, but JSZip handles it well enough usually)
-                epubZip.file("mimetype", "application/epub+zip");
-
-                // 2. META-INF/container.xml
-                const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
+            const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>`;
-                epubZip.folder("META-INF").file("container.xml", containerXml);
+            epubZip.folder("META-INF").file("container.xml", containerXml);
 
-                // 3. OEBPS folder
-                const oebps = epubZip.folder("OEBPS");
-                const imagesFolder = oebps.folder("Images");
-                const textFolder = oebps.folder("Text");
+            const oebps = epubZip.folder("OEBPS");
+            const imagesFolder = oebps.folder("Images");
+            const textFolder = oebps.folder("Text");
 
-                let manifestItems = "";
-                let spineItems = "";
-                let globalImageCounter = 0;
+            let manifestItems = "";
+            let spineItems = "";
+            let globalImageCounter = 0;
 
-                setProgress(40, "Extracting and writing images...");
+            for (let i = 0; i < images.length; i++) {
+                const imgData = images[i];
+                let ext = imgData.name.split('.').pop().toLowerCase();
+                let mimeType = ext === 'jpg' ? 'jpeg' : ext;
 
-                for (let i = 0; i < imageFiles.length; i++) {
-                    const imgFile = imageFiles[i];
-                    let ext = imgFile.name.split('.').pop().toLowerCase();
-                    let mimeType = ext === 'jpg' ? 'jpeg' : ext; // very basic mime type guess
+                let blobData = await imgData.async("blob");
+                let processedImages = [];
 
-                    // Read image data from cbz
-                    let imgData = await imgFile.async("blob");
+                if (isOptimizeEnabled) {
+                    const img = await blobToImage(blobData);
+                    if (ConverterLogic.isSpread(img.width, img.height)) {
+                        const halves = await splitImage(img, splitFormat);
+                        const order = ConverterLogic.getSplitOrder(readingDirection);
 
-                    let processedImages = [];
-
-                    if (isOptimizeEnabled) {
-                        const img = await blobToImage(imgData);
-                        if (ConverterLogic.isSpread(img.width, img.height)) {
-                            const halves = await splitImage(img, splitFormat);
-                            const order = ConverterLogic.getSplitOrder(readingDirection);
-
-                            // Adjust ext and mimeType if we converted to JPEG
-                            if (splitFormat === 'jpeg') {
-                                ext = 'jpg';
-                                mimeType = 'jpeg';
-                            } else {
-                                // Default split format uses image/png, update extension
-                                ext = 'png';
-                                mimeType = 'png';
-                            }
-
-                            if (order[0] === 'left') {
-                                processedImages.push({ blob: halves.left, ext, mimeType, suffix: '_left' });
-                                processedImages.push({ blob: halves.right, ext, mimeType, suffix: '_right' });
-                            } else {
-                                processedImages.push({ blob: halves.right, ext, mimeType, suffix: '_right' });
-                                processedImages.push({ blob: halves.left, ext, mimeType, suffix: '_left' });
-                            }
+                        if (splitFormat === 'jpeg') {
+                            ext = 'jpg';
+                            mimeType = 'jpeg';
                         } else {
-                            processedImages.push({ blob: imgData, ext, mimeType, suffix: '' });
+                            ext = 'png';
+                            mimeType = 'png';
+                        }
+
+                        if (order[0] === 'left') {
+                            processedImages.push({ blob: halves.left, ext, mimeType, suffix: '_left' });
+                            processedImages.push({ blob: halves.right, ext, mimeType, suffix: '_right' });
+                        } else {
+                            processedImages.push({ blob: halves.right, ext, mimeType, suffix: '_right' });
+                            processedImages.push({ blob: halves.left, ext, mimeType, suffix: '_left' });
                         }
                     } else {
-                        processedImages.push({ blob: imgData, ext, mimeType, suffix: '' });
+                        processedImages.push({ blob: blobData, ext, mimeType, suffix: '' });
                     }
+                } else {
+                    processedImages.push({ blob: blobData, ext, mimeType, suffix: '' });
+                }
 
-                    for (const procImg of processedImages) {
-                        const imgName = `image_${globalImageCounter.toString().padStart(4, '0')}${procImg.suffix}.${procImg.ext}`;
-                        imagesFolder.file(imgName, procImg.blob);
+                for (const procImg of processedImages) {
+                    const imgName = `image_${globalImageCounter.toString().padStart(4, '0')}${procImg.suffix}.${procImg.ext}`;
+                    imagesFolder.file(imgName, procImg.blob);
 
-                        const id = `img${globalImageCounter}`;
-                        manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"/>\n`;
+                    const id = `img${globalImageCounter}`;
+                    manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"/>
+`;
 
-                        // Create XHTML page for image
-                        const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
-                        const xhtml = `<?xml version="1.0" encoding="utf-8"?>
+                    const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
+                    const xhtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <title>Page ${globalImageCounter}</title>
@@ -276,26 +305,27 @@ if (typeof document !== 'undefined') {
   <img src="../Images/${imgName}" alt="Page ${globalImageCounter}" />
 </body>
 </html>`;
-                        textFolder.file(pageName, xhtml);
+                    textFolder.file(pageName, xhtml);
 
-                        const pageId = `page${globalImageCounter}`;
-                        manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>\n`;
-                        spineItems += `<itemref idref="${pageId}"/>\n`;
+                    const pageId = `page${globalImageCounter}`;
+                    manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>
+`;
+                    spineItems += `<itemref idref="${pageId}"/>
+`;
 
-                        globalImageCounter++;
-                    }
-
-                    if (i % 10 === 0) {
-                        setProgress(40 + (i / imageFiles.length) * 40, `Processing image ${i+1}/${imageFiles.length}...`);
-                    }
+                    globalImageCounter++;
                 }
 
-                setProgress(85, "Writing metadata...");
+                if (i % 5 === 0) {
+                    onProgress(40 + (i / images.length) * 40);
+                }
+            }
 
-                // 4. content.opf
-                const spineDirectionAttr = isOptimizeEnabled ? ConverterLogic.getSpineDirectionAttribute(readingDirection) : ' page-progression-direction="ltr"';
+            onProgress(85);
 
-                const contentOpf = `<?xml version="1.0" encoding="utf-8"?>
+            const spineDirectionAttr = isOptimizeEnabled ? ConverterLogic.getSpineDirectionAttribute(readingDirection) : ' page-progression-direction="ltr"';
+
+            const contentOpf = `<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
     <dc:title>${title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</dc:title>
@@ -310,30 +340,122 @@ if (typeof document !== 'undefined') {
     ${spineItems}
   </spine>
 </package>`;
-                oebps.file("content.opf", contentOpf);
+            oebps.file("content.opf", contentOpf);
 
-                setProgress(90, "Compressing EPUB...");
+            onProgress(90);
 
-                const epubBlob = await epubZip.generateAsync({
-                    type: "blob",
-                    mimeType: "application/epub+zip",
-                    compression: "DEFLATE",
-                    compressionOptions: {
-                        level: 9
+            const epubBlob = await epubZip.generateAsync({
+                type: "blob",
+                mimeType: "application/epub+zip",
+                compression: "DEFLATE",
+                compressionOptions: {
+                    level: 9
+                }
+            });
+
+            return epubBlob;
+        }
+
+        async function extractImagesFromCbz(file) {
+            const jszip = new JSZip();
+            const cbzData = await jszip.loadAsync(file);
+            const imageFiles = [];
+            cbzData.forEach((relativePath, zipEntry) => {
+                if (!zipEntry.dir && relativePath.match(/\.(jpe?g|png|gif|webp)$/i)) {
+                    imageFiles.push(zipEntry);
+                }
+            });
+            const collator = new Intl.Collator(undefined, {numeric: true, sensitivity: 'base'});
+            imageFiles.sort((a, b) => collator.compare(a.name, b.name));
+            return imageFiles;
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        convertBtn.addEventListener("click", async () => {
+            if (currentFiles.length === 0) return;
+
+            convertBtn.disabled = true;
+            const globalTitle = titleInput.value;
+            const globalAuthor = authorInput.value || "Unknown Author";
+            const isOptimizeEnabled = optimizeCheckbox ? optimizeCheckbox.checked : false;
+            const readingDirection = directionSelect ? directionSelect.value : 'ltr';
+            const splitFormat = formatSelect ? formatSelect.value : 'original';
+            const isMergeMode = mergeCheckbox && mergeCheckbox.checked;
+
+            progressContainer.style.display = "block";
+            progressFill.style.backgroundColor = 'var(--primary-color)';
+
+            try {
+                if (isMergeMode) {
+                    setProgress(5, "Merging files: Reading all images...");
+                    let allImages = [];
+                    for (let i = 0; i < currentFiles.length; i++) {
+                        const imgs = await extractImagesFromCbz(currentFiles[i]);
+                        allImages = allImages.concat(imgs);
+                        setProgress(5 + (i / currentFiles.length) * 20, `Reading file ${i+1}/${currentFiles.length}...`);
                     }
-                });
 
-                setProgress(100, "Done! Downloading...");
+                    if (allImages.length === 0) {
+                        throw new Error("No images found in the selected archives.");
+                    }
 
-                // Trigger download
-                const url = URL.createObjectURL(epubBlob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${title}.epub`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+                    const finalTitle = globalTitle || currentFiles[0].name.replace(/\.[^/.]+$/, "");
+
+                    setProgress(30, `Processing ${allImages.length} total images...`);
+
+                    const epubBlob = await createEpub(
+                        allImages,
+                        finalTitle,
+                        globalAuthor,
+                        isOptimizeEnabled,
+                        readingDirection,
+                        splitFormat,
+                        (percent) => setProgress(percent, "Merging and creating EPUB...")
+                    );
+
+                    setProgress(100, "Done! Downloading...");
+                    downloadBlob(epubBlob, `${finalTitle}.epub`);
+
+                } else {
+                    for (let i = 0; i < currentFiles.length; i++) {
+                        const file = currentFiles[i];
+                        const fileBaseName = file.name.replace(/\.[^/.]+$/, "");
+                        // Use global title if only one file, otherwise use filename
+                        const finalTitle = currentFiles.length === 1 ? (globalTitle || fileBaseName) : fileBaseName;
+
+                        setProgress(10, `Processing file ${i+1}/${currentFiles.length}: ${file.name}`);
+
+                        const images = await extractImagesFromCbz(file);
+                        if (images.length === 0) {
+                            console.warn(`No images found in ${file.name}`);
+                            continue;
+                        }
+
+                        const epubBlob = await createEpub(
+                            images,
+                            finalTitle,
+                            globalAuthor,
+                            isOptimizeEnabled,
+                            readingDirection,
+                            splitFormat,
+                            (percent) => setProgress(percent, `Processing file ${i+1}/${currentFiles.length}...`)
+                        );
+
+                        setProgress(95, `Downloading file ${i+1}/${currentFiles.length}...`);
+                        downloadBlob(epubBlob, `${finalTitle}.epub`);
+                    }
+                    setProgress(100, "All files converted!");
+                }
 
                 setTimeout(() => {
                     setProgress(0, "Ready");

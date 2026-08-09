@@ -14,15 +14,21 @@
         <p>Convert your comic books completely offline in your browser.</p>
 
         <div class="drop-zone" id="drop-zone">
-            <span class="drop-zone__prompt">Drop .cbz file here or click to upload</span>
-            <input type="file" id="file-input" accept=".cbz,.zip" class="drop-zone__input">
+            <span class="drop-zone__prompt">Drop .cbz files here or click to upload</span>
+            <input type="file" id="file-input" accept=".cbz,.zip" class="drop-zone__input" multiple>
         </div>
+
+        <ul class="file-list" id="file-list"></ul>
 
         <div class="metadata-form">
             <input type="text" id="title-input" placeholder="Book Title (optional)">
             <input type="text" id="author-input" placeholder="Author (optional)">
         </div>
         <div class="options-form">
+            <label class="checkbox-label" id="merge-group" style="display: none;">
+                <input type="checkbox" id="merge-checkbox">
+                Merge into single EPUB
+            </label>
             <label class="checkbox-label">
                 <input type="checkbox" id="optimize-checkbox">
                 Optimize for E-readers (Split wide spreads)

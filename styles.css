@@ -158,3 +158,57 @@ button:disabled {
     border: 1px solid #ccc;
     font-family: inherit;
 }
+
+/* File List Styles */
+.file-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 0 0 20px 0;
+    max-height: 200px;
+    overflow-y: auto;
+    text-align: left;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: #fafafa;
+}
+
+.file-list:empty {
+    display: none;
+}
+
+.file-list li {
+    padding: 10px;
+    border-bottom: 1px solid var(--border-color);
+    background: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: grab;
+}
+
+.file-list li:last-child {
+    border-bottom: none;
+}
+
+.file-list li:active {
+    cursor: grabbing;
+}
+
+.file-list li.drag-over {
+    border-top: 2px solid var(--primary-color);
+}
+
+.file-list li .remove-btn {
+    background: none;
+    border: none;
+    color: #ff4444;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 5px;
+    width: auto;
+}
+
+.file-list li .remove-btn:hover {
+    background: none;
+    color: #cc0000;
+}
