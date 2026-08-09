@@ -23,9 +23,28 @@
         <div class="metadata-form">
             <input type="text" id="title-input" placeholder="Book Title (optional)">
             <input type="text" id="author-input" placeholder="Author (optional)">
-            <div class="cover-input-group">
-                <label for="cover-input">Custom Cover (optional):</label>
-                <input type="file" id="cover-input" accept=".jpg,.jpeg,.png">
+                        <div class="cover-options-group">
+                <label>Cover Image Source:</label>
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="cover-source" value="page" checked>
+                        Use Page from Book
+                    </label>
+                    <label>
+                        <input type="radio" name="cover-source" value="custom">
+                        Upload Custom Cover
+                    </label>
+                </div>
+
+                <div id="cover-page-input-group" class="cover-input-subgroup">
+                    <label for="cover-page-input">Page Number for Cover:</label>
+                    <input type="number" id="cover-page-input" min="1" value="1">
+                </div>
+
+                <div id="cover-file-input-group" class="cover-input-subgroup" style="display: none;">
+                    <label for="cover-input">Custom Cover (optional):</label>
+                    <input type="file" id="cover-input" accept=".jpg,.jpeg,.png">
+                </div>
             </div>
         </div>
         <div class="options-form">

@@ -233,3 +233,53 @@ button:disabled {
     border-radius: 5px;
     background: #fff;
 }
+
+.cover-options-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+    margin-top: 5px;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: #fafafa;
+}
+
+.cover-options-group > label {
+    font-weight: bold;
+    color: #333;
+}
+
+.radio-group {
+    display: flex;
+    gap: 15px;
+}
+
+.radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.cover-input-subgroup {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.cover-input-subgroup label {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.cover-input-subgroup input[type="file"],
+.cover-input-subgroup input[type="number"] {
+    padding: 8px;
+    font-size: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: #fff;
+}

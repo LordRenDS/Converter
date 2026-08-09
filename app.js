@@ -27,6 +27,22 @@ if (typeof document !== 'undefined') {
         const titleInput = document.getElementById("title-input");
         const authorInput = document.getElementById("author-input");
         const coverInput = document.getElementById("cover-input");
+        const coverPageInput = document.getElementById("cover-page-input");
+        const coverSourceRadios = document.querySelectorAll('input[name="cover-source"]');
+        const coverPageInputGroup = document.getElementById("cover-page-input-group");
+        const coverFileInputGroup = document.getElementById("cover-file-input-group");
+
+        coverSourceRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'page') {
+                    coverPageInputGroup.style.display = 'flex';
+                    coverFileInputGroup.style.display = 'none';
+                } else {
+                    coverPageInputGroup.style.display = 'none';
+                    coverFileInputGroup.style.display = 'flex';
+                }
+            });
+        });
 
         const optimizeCheckbox = document.getElementById("optimize-checkbox");
         const directionSelect = document.getElementById("direction-select");
@@ -227,7 +243,7 @@ if (typeof document !== 'undefined') {
 
         // EPUB Generation logic
 
-        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, customCoverFile, onProgress) {
+        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, customCoverFile, coverSource, coverPageNumber, onProgress) {
             const epubZip = new JSZip();
 
             epubZip.file("mimetype", "application/epub+zip");
@@ -249,7 +265,7 @@ if (typeof document !== 'undefined') {
             let globalImageCounter = 0;
             let coverId = null;
 
-            if (customCoverFile) {
+            if (coverSource === 'custom' && customCoverFile) {
                 // Process custom cover
                 let ext = customCoverFile.name.split('.').pop().toLowerCase();
                 let mimeType = ext === 'jpg' ? 'jpeg' : ext;
@@ -324,13 +340,12 @@ if (typeof document !== 'undefined') {
 
                     const id = `img${globalImageCounter}`;
                     let properties = '';
-                    if (!customCoverFile && globalImageCounter === 0 && procImg.suffix === '') {
-                        properties = ' properties="cover-image"';
-                        coverId = id;
-                    } else if (!customCoverFile && globalImageCounter === 0 && processedImages.indexOf(procImg) === 0) {
+
+                    if (coverSource === 'page' && globalImageCounter === (coverPageNumber - 1)) {
                         properties = ' properties="cover-image"';
                         coverId = id;
                     }
+
                     manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"${properties}/>
 `;
 
@@ -435,6 +450,8 @@ if (typeof document !== 'undefined') {
             const readingDirection = directionSelect ? directionSelect.value : 'ltr';
             const splitFormat = formatSelect ? formatSelect.value : 'original';
             const isMergeMode = mergeCheckbox && mergeCheckbox.checked;
+            const coverSource = document.querySelector('input[name="cover-source"]:checked').value;
+            const coverPageNumber = parseInt(coverPageInput.value, 10) || 1;
             const customCoverFile = coverInput && coverInput.files.length > 0 ? coverInput.files[0] : null;
 
             progressContainer.style.display = "block";
@@ -466,6 +483,8 @@ if (typeof document !== 'undefined') {
                         readingDirection,
                         splitFormat,
                         customCoverFile,
+                        coverSource,
+                        coverPageNumber,
                         (percent) => setProgress(percent, "Merging and creating EPUB...")
                     );
 
@@ -495,6 +514,8 @@ if (typeof document !== 'undefined') {
                             readingDirection,
                             splitFormat,
                             customCoverFile,
+                            coverSource,
+                            coverPageNumber,
                             (percent) => setProgress(percent, `Processing file ${i+1}/${currentFiles.length}...`)
                         );
 
