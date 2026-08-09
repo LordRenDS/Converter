@@ -22,6 +22,27 @@
             <input type="text" id="title-input" placeholder="Book Title (optional)">
             <input type="text" id="author-input" placeholder="Author (optional)">
         </div>
+        <div class="options-form">
+            <label class="checkbox-label">
+                <input type="checkbox" id="optimize-checkbox">
+                Optimize for E-readers (Split wide spreads)
+            </label>
+            <div class="select-group">
+                <label for="direction-select">Reading Direction:</label>
+                <select id="direction-select">
+                    <option value="ltr">Comic (Left-to-Right)</option>
+                    <option value="rtl">Manga (Right-to-Left)</option>
+                </select>
+            </div>
+            <div class="select-group" id="format-group" style="opacity: 0.5; pointer-events: none;">
+                <label for="format-select">Split Format:</label>
+                <select id="format-select" disabled>
+                    <option value="original">Original Format</option>
+                    <option value="jpeg">JPEG (Smaller size)</option>
+                </select>
+            </div>
+        </div>
+
 
         <button id="convert-btn" disabled>Convert</button>
 
