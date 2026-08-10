@@ -211,8 +211,13 @@ if (typeof document !== 'undefined') {
 
         function imageToBlob(canvasOrImg, mimeType) {
             return new Promise((resolve) => {
+                let fullMimeType = mimeType;
+                if (mimeType && !mimeType.startsWith('image/')) {
+                    fullMimeType = `image/${mimeType}`;
+                }
+
                 if (canvasOrImg instanceof HTMLCanvasElement) {
-                    canvasOrImg.toBlob(resolve, mimeType, 0.9);
+                    canvasOrImg.toBlob(resolve, fullMimeType, 0.9);
                 } else if (canvasOrImg instanceof HTMLImageElement) {
                     const canvas = document.createElement('canvas');
                     canvas.width = canvasOrImg.width;
@@ -226,7 +231,7 @@ if (typeof document !== 'undefined') {
         }
 
 
-        async function processImage(img, isKindleFit, isGrayscale, mimeType) {
+        async function processImage(img, originalBlob, isKindleFit, isGrayscale, mimeType) {
             let width = img.width;
             let height = img.height;
             let needsProcessing = false;
@@ -249,7 +254,11 @@ if (typeof document !== 'undefined') {
             }
 
             if (!needsProcessing) {
-                return { blob: await imageToBlob(img, mimeType), width: img.width, height: img.height };
+                if (originalBlob) {
+                    return { blob: originalBlob, width: img.width, height: img.height };
+                } else {
+                    return { blob: await imageToBlob(img, mimeType), width: img.width, height: img.height };
+                }
             }
 
             const canvas = document.createElement('canvas');
@@ -391,8 +400,8 @@ if (typeof document !== 'undefined') {
                         const leftImg = await blobToImage(halves.left);
                         const rightImg = await blobToImage(halves.right);
 
-                        const leftRes = await processImage(leftImg, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
-                        const rightRes = await processImage(rightImg, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                        const leftRes = await processImage(leftImg, halves.left, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                        const rightRes = await processImage(rightImg, halves.right, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
 
                         if (order[0] === 'left') {
                             processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height });
@@ -405,7 +414,7 @@ if (typeof document !== 'undefined') {
                 }
 
                 if (!isSpreadProcessed) {
-                    const res = await processImage(img, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                    const res = await processImage(img, blobData, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
                     processedImages.push({ blob: res.blob, ext, mimeType, suffix: '', width: res.width, height: res.height });
                 }
 
