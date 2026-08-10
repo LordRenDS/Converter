@@ -47,6 +47,8 @@ if (typeof document !== 'undefined') {
         const optimizeCheckbox = document.getElementById("optimize-checkbox");
         const directionSelect = document.getElementById("direction-select");
         const formatSelect = document.getElementById("format-select");
+        const kindlePw12Checkbox = document.getElementById("kindle-pw12-checkbox");
+        const grayscaleCheckbox = document.getElementById("grayscale-checkbox");
         const formatGroup = document.getElementById("format-group");
 
         const fileList = document.getElementById("file-list");
@@ -207,10 +209,71 @@ if (typeof document !== 'undefined') {
             });
         }
 
-        function imageToBlob(canvas, mimeType) {
+        function imageToBlob(canvasOrImg, mimeType) {
             return new Promise((resolve) => {
-                canvas.toBlob(resolve, mimeType, 0.9);
+                if (canvasOrImg instanceof HTMLCanvasElement) {
+                    canvasOrImg.toBlob(resolve, mimeType, 0.9);
+                } else if (canvasOrImg instanceof HTMLImageElement) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvasOrImg.width;
+                    canvas.height = canvasOrImg.height;
+                    canvas.getContext('2d').drawImage(canvasOrImg, 0, 0);
+                    canvas.toBlob(resolve, mimeType, 0.9);
+                } else {
+                    resolve(null);
+                }
             });
+        }
+
+
+        async function processImage(img, isKindleFit, isGrayscale, mimeType) {
+            let width = img.width;
+            let height = img.height;
+            let needsProcessing = false;
+
+            if (isKindleFit) {
+                const targetWidth = 1264;
+                const targetHeight = 1680;
+
+                // Only scale if the image is larger than the target in either dimension
+                if (width > targetWidth || height > targetHeight) {
+                    const ratio = Math.min(targetWidth / width, targetHeight / height);
+                    width = Math.round(width * ratio);
+                    height = Math.round(height * ratio);
+                    needsProcessing = true;
+                }
+            }
+
+            if (isGrayscale) {
+                needsProcessing = true;
+            }
+
+            if (!needsProcessing) {
+                return { blob: await imageToBlob(img, mimeType), width: img.width, height: img.height };
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            // Draw image with new dimensions
+            ctx.drawImage(img, 0, 0, width, height);
+
+            if (isGrayscale) {
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    // Standard luminance formula
+                    const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    data[i] = avg;     // red
+                    data[i + 1] = avg; // green
+                    data[i + 2] = avg; // blue
+                }
+                ctx.putImageData(imgData, 0, 0);
+            }
+
+            return { blob: await imageToBlob(canvas, mimeType), width, height };
         }
 
         async function splitImage(img, format) {
@@ -243,7 +306,7 @@ if (typeof document !== 'undefined') {
 
         // EPUB Generation logic
 
-        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, customCoverFile, coverSource, coverPageNumber, onProgress) {
+        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, splitFormat, customCoverFile, coverSource, coverPageNumber, isKindleFitEnabled, isGrayscaleEnabled, onProgress) {
             const epubZip = new JSZip();
 
             epubZip.file("mimetype", "application/epub+zip");
@@ -278,13 +341,15 @@ if (typeof document !== 'undefined') {
                 manifestItems += `<item id="${coverId}" href="Images/${imgName}" media-type="image/${mimeType}" properties="cover-image"/>\n`;
 
                 const coverPageName = 'cover.xhtml';
+                const img = await blobToImage(blobData);
                 const xhtml = `<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <title>Cover</title>
+  <meta name="viewport" content="width=${img.width}, height=${img.height}"/>
   <style type="text/css">
-    body { margin: 0; padding: 0; text-align: center; }
-    img { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
+    body { margin: 0; padding: 0; width: ${img.width}px; height: ${img.height}px; overflow: hidden; }
+    img { width: 100%; height: 100%; display: block; margin: 0; padding: 0; object-fit: cover; }
   </style>
 </head>
 <body>
@@ -306,9 +371,12 @@ if (typeof document !== 'undefined') {
                 let blobData = await imgData.async("blob");
                 let processedImages = [];
 
+                const img = await blobToImage(blobData);
+                let isSpreadProcessed = false;
+
                 if (isOptimizeEnabled) {
-                    const img = await blobToImage(blobData);
                     if (ConverterLogic.isSpread(img.width, img.height)) {
+                        isSpreadProcessed = true;
                         const halves = await splitImage(img, splitFormat);
                         const order = ConverterLogic.getSplitOrder(readingDirection);
 
@@ -320,18 +388,25 @@ if (typeof document !== 'undefined') {
                             mimeType = 'png';
                         }
 
+                        const leftImg = await blobToImage(halves.left);
+                        const rightImg = await blobToImage(halves.right);
+
+                        const leftRes = await processImage(leftImg, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                        const rightRes = await processImage(rightImg, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+
                         if (order[0] === 'left') {
-                            processedImages.push({ blob: halves.left, ext, mimeType, suffix: '_left' });
-                            processedImages.push({ blob: halves.right, ext, mimeType, suffix: '_right' });
+                            processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height });
+                            processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height });
                         } else {
-                            processedImages.push({ blob: halves.right, ext, mimeType, suffix: '_right' });
-                            processedImages.push({ blob: halves.left, ext, mimeType, suffix: '_left' });
+                            processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height });
+                            processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height });
                         }
-                    } else {
-                        processedImages.push({ blob: blobData, ext, mimeType, suffix: '' });
                     }
-                } else {
-                    processedImages.push({ blob: blobData, ext, mimeType, suffix: '' });
+                }
+
+                if (!isSpreadProcessed) {
+                    const res = await processImage(img, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                    processedImages.push({ blob: res.blob, ext, mimeType, suffix: '', width: res.width, height: res.height });
                 }
 
                 for (const procImg of processedImages) {
@@ -351,12 +426,13 @@ if (typeof document !== 'undefined') {
 
                     const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
                     const xhtml = `<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <title>Page ${globalImageCounter}</title>
+  <meta name="viewport" content="width=${procImg.width}, height=${procImg.height}"/>
   <style type="text/css">
-    body { margin: 0; padding: 0; text-align: center; }
-    img { max-width: 100%; max-height: 100vh; height: auto; object-fit: contain; }
+    body { margin: 0; padding: 0; width: ${procImg.width}px; height: ${procImg.height}px; overflow: hidden; }
+    img { width: 100%; height: 100%; display: block; margin: 0; padding: 0; object-fit: cover; }
   </style>
 </head>
 <body>
@@ -383,14 +459,21 @@ if (typeof document !== 'undefined') {
 
             const spineDirectionAttr = isOptimizeEnabled ? ConverterLogic.getSpineDirectionAttribute(readingDirection) : ' page-progression-direction="ltr"';
 
+            const primaryWritingMode = readingDirection === 'rtl' ? 'horizontal-rl' : 'horizontal-lr';
             const contentOpf = `<?xml version="1.0" encoding="utf-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
     <dc:title>${title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</dc:title>
     <dc:creator opf:role="aut">${author.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</dc:creator>
     <dc:language>en</dc:language>
     <dc:identifier id="BookId">urn:uuid:${crypto.randomUUID ? crypto.randomUUID() : '12345-67890'}</dc:identifier>
     ${coverId ? `<meta name="cover" content="${coverId}"/>` : ''}
+    <meta property="rendition:layout">pre-paginated</meta>
+    <meta property="rendition:orientation">auto</meta>
+    <meta property="rendition:spread">auto</meta>
+    <meta name="book-type" content="comic"/>
+    <meta name="fixed-layout" content="true"/>
+    <meta name="primary-writing-mode" content="${primaryWritingMode}"/>
   </metadata>
   <manifest>
     ${manifestItems}
@@ -453,6 +536,8 @@ if (typeof document !== 'undefined') {
             const coverSource = document.querySelector('input[name="cover-source"]:checked').value;
             const coverPageNumber = parseInt(coverPageInput.value, 10) || 1;
             const customCoverFile = coverInput && coverInput.files.length > 0 ? coverInput.files[0] : null;
+            const isKindleFitEnabled = kindlePw12Checkbox ? kindlePw12Checkbox.checked : false;
+            const isGrayscaleEnabled = grayscaleCheckbox ? grayscaleCheckbox.checked : false;
 
             progressContainer.style.display = "block";
             progressFill.style.backgroundColor = 'var(--primary-color)';
@@ -485,6 +570,8 @@ if (typeof document !== 'undefined') {
                         customCoverFile,
                         coverSource,
                         coverPageNumber,
+                        isKindleFitEnabled,
+                        isGrayscaleEnabled,
                         (percent) => setProgress(percent, "Merging and creating EPUB...")
                     );
 
@@ -516,6 +603,8 @@ if (typeof document !== 'undefined') {
                             customCoverFile,
                             coverSource,
                             coverPageNumber,
+                            isKindleFitEnabled,
+                            isGrayscaleEnabled,
                             (percent) => setProgress(percent, `Processing file ${i+1}/${currentFiles.length}...`)
                         );
 
