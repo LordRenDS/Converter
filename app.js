@@ -9,6 +9,117 @@ const ConverterLogic = {
     },
     getSpineDirectionAttribute: (direction) => {
         return direction === 'rtl' ? ' page-progression-direction="rtl"' : ' page-progression-direction="ltr"';
+    },
+
+    blobToImage: function(blob) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(img.src);
+                resolve(img);
+            };
+            img.onerror = reject;
+            img.src = URL.createObjectURL(blob);
+        });
+    },
+
+    imageToBlob: function(canvasOrImg, mimeType) {
+        return new Promise((resolve) => {
+            let fullMimeType = mimeType;
+            if (mimeType && !mimeType.startsWith('image/')) {
+                fullMimeType = `image/${mimeType}`;
+            }
+
+            if (canvasOrImg instanceof HTMLCanvasElement) {
+                canvasOrImg.toBlob(resolve, fullMimeType, 0.9);
+            } else if (canvasOrImg instanceof HTMLImageElement) {
+                const canvas = document.createElement('canvas');
+                canvas.width = canvasOrImg.width;
+                canvas.height = canvasOrImg.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(canvasOrImg, 0, 0);
+                canvas.toBlob(resolve, fullMimeType, 0.9);
+            }
+        });
+    },
+
+    processImage: async function(img, originalBlob, isKindleFit, isGrayscale, mimeType) {
+        let width = img.width;
+        let height = img.height;
+        let needsProcessing = false;
+
+        if (isKindleFit) {
+            const targetWidth = 1264;
+            const targetHeight = 1680;
+
+            if (width > targetWidth || height > targetHeight) {
+                const ratio = Math.min(targetWidth / width, targetHeight / height);
+                width = Math.round(width * ratio);
+                height = Math.round(height * ratio);
+                needsProcessing = true;
+            }
+        }
+
+        if (isGrayscale) {
+            needsProcessing = true;
+        }
+
+        if (!needsProcessing) {
+            if (originalBlob) {
+                return { blob: originalBlob, width: img.width, height: img.height };
+            } else {
+                return { blob: await this.imageToBlob(img, mimeType), width: img.width, height: img.height };
+            }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        if (isGrayscale) {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                data[i] = avg;
+                data[i + 1] = avg;
+                data[i + 2] = avg;
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        return { blob: await this.imageToBlob(canvas, mimeType), width, height };
+    },
+
+    splitImage: async function(img, format) {
+        const width = img.width;
+        const height = img.height;
+        const halfWidth = Math.floor(width / 2);
+
+        const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png'; // Default to png if original doesn't specify well
+
+        // Left half
+        const leftCanvas = document.createElement('canvas');
+        leftCanvas.width = halfWidth;
+        leftCanvas.height = height;
+        const leftCtx = leftCanvas.getContext('2d');
+        leftCtx.drawImage(img, 0, 0, halfWidth, height, 0, 0, halfWidth, height);
+        const leftBlob = await this.imageToBlob(leftCanvas, mimeType);
+
+        // Right half
+        const rightCanvas = document.createElement('canvas');
+        // Allow for odd-width images
+        const rightWidth = width - halfWidth;
+        rightCanvas.width = rightWidth;
+        rightCanvas.height = height;
+        const rightCtx = rightCanvas.getContext('2d');
+        rightCtx.drawImage(img, halfWidth, 0, rightWidth, height, 0, 0, rightWidth, height);
+        const rightBlob = await this.imageToBlob(rightCanvas, mimeType);
+
+        return { left: leftBlob, right: rightBlob, mimeType };
     }
 };
 
@@ -197,121 +308,6 @@ if (typeof document !== 'undefined') {
             statusText.textContent = text;
         }
 
-        function blobToImage(blob) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => {
-                    URL.revokeObjectURL(img.src);
-                    resolve(img);
-                };
-                img.onerror = reject;
-                img.src = URL.createObjectURL(blob);
-            });
-        }
-
-        function imageToBlob(canvasOrImg, mimeType) {
-            return new Promise((resolve) => {
-                let fullMimeType = mimeType;
-                if (mimeType && !mimeType.startsWith('image/')) {
-                    fullMimeType = `image/${mimeType}`;
-                }
-
-                if (canvasOrImg instanceof HTMLCanvasElement) {
-                    canvasOrImg.toBlob(resolve, fullMimeType, 0.9);
-                } else if (canvasOrImg instanceof HTMLImageElement) {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = canvasOrImg.width;
-                    canvas.height = canvasOrImg.height;
-                    canvas.getContext('2d').drawImage(canvasOrImg, 0, 0);
-                    canvas.toBlob(resolve, mimeType, 0.9);
-                } else {
-                    resolve(null);
-                }
-            });
-        }
-
-
-        async function processImage(img, originalBlob, isKindleFit, isGrayscale, mimeType) {
-            let width = img.width;
-            let height = img.height;
-            let needsProcessing = false;
-
-            if (isKindleFit) {
-                const targetWidth = 1264;
-                const targetHeight = 1680;
-
-                // Only scale if the image is larger than the target in either dimension
-                if (width > targetWidth || height > targetHeight) {
-                    const ratio = Math.min(targetWidth / width, targetHeight / height);
-                    width = Math.round(width * ratio);
-                    height = Math.round(height * ratio);
-                    needsProcessing = true;
-                }
-            }
-
-            if (isGrayscale) {
-                needsProcessing = true;
-            }
-
-            if (!needsProcessing) {
-                if (originalBlob) {
-                    return { blob: originalBlob, width: img.width, height: img.height };
-                } else {
-                    return { blob: await imageToBlob(img, mimeType), width: img.width, height: img.height };
-                }
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-
-            // Draw image with new dimensions
-            ctx.drawImage(img, 0, 0, width, height);
-
-            if (isGrayscale) {
-                const imgData = ctx.getImageData(0, 0, width, height);
-                const data = imgData.data;
-                for (let i = 0; i < data.length; i += 4) {
-                    // Standard luminance formula
-                    const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                    data[i] = avg;     // red
-                    data[i + 1] = avg; // green
-                    data[i + 2] = avg; // blue
-                }
-                ctx.putImageData(imgData, 0, 0);
-            }
-
-            return { blob: await imageToBlob(canvas, mimeType), width, height };
-        }
-
-        async function splitImage(img, format) {
-            const width = img.width;
-            const height = img.height;
-            const halfWidth = Math.floor(width / 2);
-
-            const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png'; // Default to png if original doesn't specify well
-
-            // Left half
-            const leftCanvas = document.createElement('canvas');
-            leftCanvas.width = halfWidth;
-            leftCanvas.height = height;
-            const leftCtx = leftCanvas.getContext('2d');
-            leftCtx.drawImage(img, 0, 0, halfWidth, height, 0, 0, halfWidth, height);
-            const leftBlob = await imageToBlob(leftCanvas, mimeType);
-
-            // Right half
-            const rightCanvas = document.createElement('canvas');
-            // Allow for odd-width images
-            const rightWidth = width - halfWidth;
-            rightCanvas.width = rightWidth;
-            rightCanvas.height = height;
-            const rightCtx = rightCanvas.getContext('2d');
-            rightCtx.drawImage(img, halfWidth, 0, rightWidth, height, 0, 0, rightWidth, height);
-            const rightBlob = await imageToBlob(rightCanvas, mimeType);
-
-            return { left: leftBlob, right: rightBlob, mimeType };
-        }
 
         // EPUB Generation logic
 
@@ -350,7 +346,7 @@ if (typeof document !== 'undefined') {
                 manifestItems += `<item id="${coverId}" href="Images/${imgName}" media-type="image/${mimeType}" properties="cover-image"/>\n`;
 
                 const coverPageName = 'cover.xhtml';
-                const img = await blobToImage(blobData);
+                const img = await ConverterLogic.blobToImage(blobData);
                 const xhtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
@@ -380,13 +376,13 @@ if (typeof document !== 'undefined') {
                 let blobData = await imgData.async("blob");
                 let processedImages = [];
 
-                const img = await blobToImage(blobData);
+                const img = await ConverterLogic.blobToImage(blobData);
                 let isSpreadProcessed = false;
 
                 if (isOptimizeEnabled) {
                     if (ConverterLogic.isSpread(img.width, img.height)) {
                         isSpreadProcessed = true;
-                        const halves = await splitImage(img, splitFormat);
+                        const halves = await ConverterLogic.splitImage(img, splitFormat);
                         const order = ConverterLogic.getSplitOrder(readingDirection);
 
                         if (splitFormat === 'jpeg') {
@@ -397,11 +393,11 @@ if (typeof document !== 'undefined') {
                             mimeType = 'png';
                         }
 
-                        const leftImg = await blobToImage(halves.left);
-                        const rightImg = await blobToImage(halves.right);
+                        const leftImg = await ConverterLogic.blobToImage(halves.left);
+                        const rightImg = await ConverterLogic.blobToImage(halves.right);
 
-                        const leftRes = await processImage(leftImg, halves.left, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
-                        const rightRes = await processImage(rightImg, halves.right, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                        const leftRes = await ConverterLogic.processImage(leftImg, halves.left, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                        const rightRes = await ConverterLogic.processImage(rightImg, halves.right, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
 
                         if (order[0] === 'left') {
                             processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height });
@@ -414,7 +410,7 @@ if (typeof document !== 'undefined') {
                 }
 
                 if (!isSpreadProcessed) {
-                    const res = await processImage(img, blobData, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
+                    const res = await ConverterLogic.processImage(img, blobData, isKindleFitEnabled, isGrayscaleEnabled, mimeType);
                     processedImages.push({ blob: res.blob, ext, mimeType, suffix: '', width: res.width, height: res.height });
                 }
 
