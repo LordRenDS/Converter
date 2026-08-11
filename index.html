@@ -48,13 +48,13 @@
             </div>
         </div>
         <div class="options-form">
-            <label class="checkbox-label" id="merge-group" style="display: none;">
-                <input type="checkbox" id="merge-checkbox">
+            <label class="checkbox-label" id="merge-group">
+                <input type="checkbox" id="merge-checkbox" disabled>
                 Merge into single EPUB
             </label>
             <label class="checkbox-label">
                 <input type="checkbox" id="optimize-checkbox">
-                Optimize for E-readers (Split wide spreads)
+                Split wide spreads
             </label>
             <div class="select-group">
                 <label for="direction-select">Reading Direction:</label>
@@ -63,12 +63,16 @@
                     <option value="rtl">Manga (Right-to-Left)</option>
                 </select>
             </div>
-                        <div class="select-group" id="format-group" style="opacity: 0.5; pointer-events: none;">
-                <label for="format-select">Split Format:</label>
-                <select id="format-select" disabled>
+                        <div class="select-group" id="format-group">
+                <label for="format-select">Image Format:</label>
+                <select id="format-select">
                     <option value="original">Original Format</option>
                     <option value="jpeg">JPEG (Smaller size)</option>
                 </select>
+            </div>
+            <div class="select-group" id="quality-group" style="display: none;">
+                <label for="quality-input">JPEG Quality (1-100):</label>
+                <input type="number" id="quality-input" min="1" max="100" value="85" title="Optimal value is around 85">
             </div>
             <label class="checkbox-label">
                 <input type="checkbox" id="kindle-pw12-checkbox">
