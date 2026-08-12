@@ -220,13 +220,15 @@ export async function createEpub({
 
             const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
             const pageId = `page${globalImageCounter}`;
-            manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>\n`;
+            // NOTE: manifest item for XHTML page is added after spread calculation
+            // so we can include properties="scripted" only for pages that need it
 
             const spineIndex = spinePages.length;
             spinePages.push({ id: pageId, type: procImg.type });
 
             pagesToGenerate.push({
                 pageName,
+                pageId,
                 spineIndex,
                 title: `Page ${globalImageCounter}`,
                 width: procImg.width,
@@ -255,10 +257,31 @@ export async function createEpub({
     for (const page of pagesToGenerate) {
         const spreadProp = spreadProps[page.spineIndex] || '';
         const landscapeAlign = getPageSpreadAlignment(spreadProp);
-        // In portrait mode always center; landscape-only alignment via media query
-        const landscapeRule = (landscapeAlign !== 'center')
-            ? `\n    @media (orientation: landscape) { div.page-container { text-align: ${landscapeAlign}; } }`
-            : '';
+        // Spread pages: JS detects device screen orientation at runtime.
+        // CSS default = seam alignment (fallback for non-JS readers in landscape spread).
+        // JS overrides: portrait device -> center, landscape device -> seam alignment.
+        const needsScript = landscapeAlign !== 'center';
+
+        // Add manifest item here (after spread calc), so we can flag scripted pages
+        const scriptedProp = needsScript ? ' properties="scripted"' : '';
+        manifestItems += `<item id="${page.pageId}" href="Text/${page.pageName}" media-type="application/xhtml+xml"${scriptedProp}/>\n`;
+
+        const scriptBlock = needsScript ? `
+  <script type="text/javascript">//<![CDATA[
+  (function() {
+    var sa = '${landscapeAlign}';
+    function upd() {
+      var pc = document.querySelector('.page-container');
+      if (!pc) return;
+      var ls = window.screen && window.screen.width > window.screen.height;
+      pc.style.textAlign = ls ? sa : 'center';
+    }
+    upd();
+    window.addEventListener('resize', upd);
+    try { window.screen.orientation.addEventListener('change', upd); } catch(e) {}
+  })();
+  //]]></script>` : '';
+
         const xhtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
@@ -267,9 +290,9 @@ export async function createEpub({
   <style type="text/css">
     @page { margin: 0; }
     body { margin: 0; padding: 0; background-color: #FFFFFF; }
-    div.page-container { text-align: center; margin: 0; padding: 0; }
-    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }${landscapeRule}
-  </style>
+    div.page-container { text-align: ${needsScript ? landscapeAlign : 'center'}; margin: 0; padding: 0; }
+    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
+  </style>${scriptBlock}
 </head>
 <body>
   <div class="page-container">

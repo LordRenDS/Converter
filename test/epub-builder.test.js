@@ -511,14 +511,19 @@ describe('epub-builder module', () => {
 
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
+            const opf = filesCreated['OEBPS/content.opf'];
 
-            // Portrait always center; landscape alignment in media query
-            // In RTL without offset: page0 has spreadProp 'right' -> landscape text-align: left;
-            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(page0).toContain('@media (orientation: landscape) { div.page-container { text-align: left; } }');
-            // page1 has spreadProp 'left' -> landscape text-align: right;
-            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(page1).toContain('@media (orientation: landscape) { div.page-container { text-align: right; } }');
+            // In RTL without offset: page0=spreadProp 'right' -> seam left; page1=spreadProp 'left' -> seam right
+            // CSS default = seam alignment (non-JS reader fallback)
+            expect(page0).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
+            expect(page1).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
+            // JS block detects device orientation via window.screen
+            expect(page0).toContain("var sa = 'left';");
+            expect(page0).toContain('window.screen.width > window.screen.height');
+            expect(page1).toContain("var sa = 'right';");
+            // Manifest items have properties="scripted"
+            expect(opf).toContain('href="Text/page_0000.xhtml" media-type="application/xhtml+xml" properties="scripted"');
+            expect(opf).toContain('href="Text/page_0001.xhtml" media-type="application/xhtml+xml" properties="scripted"');
         });
 
         it('should align left spread page to right and right spread page to left in LTR landscape', async () => {
@@ -540,14 +545,19 @@ describe('epub-builder module', () => {
 
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
+            const opf = filesCreated['OEBPS/content.opf'];
 
-            // Portrait always center; landscape alignment in media query
-            // In LTR without offset: page0 has spreadProp 'left' -> landscape text-align: right;
-            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(page0).toContain('@media (orientation: landscape) { div.page-container { text-align: right; } }');
-            // page1 has spreadProp 'right' -> landscape text-align: left;
-            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(page1).toContain('@media (orientation: landscape) { div.page-container { text-align: left; } }');
+            // In LTR without offset: page0=spreadProp 'left' -> seam right; page1=spreadProp 'right' -> seam left
+            // CSS default = seam alignment (non-JS reader fallback)
+            expect(page0).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
+            expect(page1).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
+            // JS block detects device orientation via window.screen
+            expect(page0).toContain("var sa = 'right';");
+            expect(page0).toContain('window.screen.width > window.screen.height');
+            expect(page1).toContain("var sa = 'left';");
+            // Manifest items have properties="scripted"
+            expect(opf).toContain('href="Text/page_0000.xhtml" media-type="application/xhtml+xml" properties="scripted"');
+            expect(opf).toContain('href="Text/page_0001.xhtml" media-type="application/xhtml+xml" properties="scripted"');
         });
 
         it('should align unsplit wide spread page to center in landscape mode', async () => {

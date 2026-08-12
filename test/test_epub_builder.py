@@ -203,12 +203,14 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
         self.assertIn('@page { margin: 0; }', page0)
         self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
-        # Portrait always center; landscape alignment via media query
-        # RTL: page0=spreadProp 'right' -> landscape left; page1=spreadProp 'left' -> landscape right
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
-        self.assertIn('@media (orientation: landscape) { div.page-container { text-align: left; } }', page0)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page1)
-        self.assertIn('@media (orientation: landscape) { div.page-container { text-align: right; } }', page1)
+        # CSS default = seam alignment (non-JS reader fallback)
+        # RTL: page0=spreadProp 'right' -> seam left; page1=spreadProp 'left' -> seam right
+        self.assertIn('div.page-container { text-align: left; margin: 0; padding: 0; }', page0)
+        self.assertIn('div.page-container { text-align: right; margin: 0; padding: 0; }', page1)
+        # JS block present and uses window.screen for device orientation
+        self.assertIn("var sa = 'left';", page0)
+        self.assertIn('window.screen.width > window.screen.height', page0)
+        self.assertIn("var sa = 'right';", page1)
 
     def test_landscape_spread_xhtml_alignment_ltr(self):
         js_code = self.base_env + """
@@ -242,12 +244,14 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
         self.assertIn('@page { margin: 0; }', page0)
         self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
-        # Portrait always center; landscape alignment via media query
-        # LTR: page0=spreadProp 'left' -> landscape right; page1=spreadProp 'right' -> landscape left
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
-        self.assertIn('@media (orientation: landscape) { div.page-container { text-align: right; } }', page0)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page1)
-        self.assertIn('@media (orientation: landscape) { div.page-container { text-align: left; } }', page1)
+        # CSS default = seam alignment (non-JS reader fallback)
+        # LTR: page0=spreadProp 'left' -> seam right; page1=spreadProp 'right' -> seam left
+        self.assertIn('div.page-container { text-align: right; margin: 0; padding: 0; }', page0)
+        self.assertIn('div.page-container { text-align: left; margin: 0; padding: 0; }', page1)
+        # JS block present and uses window.screen for device orientation
+        self.assertIn("var sa = 'right';", page0)
+        self.assertIn('window.screen.width > window.screen.height', page0)
+        self.assertIn("var sa = 'left';", page1)
 
     def test_landscape_spread_disabled_xhtml_alignment(self):
         js_code = self.base_env + """
