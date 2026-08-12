@@ -1,5 +1,6 @@
 import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY } from './constants.js';
 import { isSpread, getSplitOrder, blobToImage, processImage, splitImage } from './image-processor.js';
+import { PAGE_TYPES, calculatePageSpreads, getPageSpreadProperty } from './spread-calculator.js';
 
 /**
  * Returns the EPUB spine attribute for page progression direction.
@@ -73,11 +74,8 @@ export async function createEpub({
     const textFolder = oebps.folder('Text');
 
     let manifestItems = '';
-    let spineItems = '';
+    const spinePages = [];
     let globalImageCounter = 0;
-    const startSide = readingDirection === READING_DIRECTIONS.RTL ? 'right' : 'left';
-    const endSide = readingDirection === READING_DIRECTIONS.RTL ? 'left' : 'right';
-    let expectedNextSide = isOffsetFirstPage ? startSide : endSide;
     let coverId = null;
     let maxWidth = 0;
     let maxHeight = 0;
@@ -118,12 +116,7 @@ export async function createEpub({
         const coverPageId = 'cover-page';
         manifestItems += `<item id="${coverPageId}" href="Text/${coverPageName}" media-type="application/xhtml+xml"/>\n`;
 
-        let coverSpineProps = '';
-        if (isLandscapeSpread) {
-            coverSpineProps = ` properties="page-spread-${expectedNextSide}"`;
-            expectedNextSide = (expectedNextSide === startSide) ? endSide : startSide;
-        }
-        spineItems += `<itemref idref="${coverPageId}"${coverSpineProps}/>\n`;
+        spinePages.push({ id: coverPageId, type: PAGE_TYPES.NORMAL });
     }
 
     // Process images
@@ -159,11 +152,11 @@ export async function createEpub({
                 const rightRes = await processImage(rightImg, halves.right, isKindleFitEnabled, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality);
 
                 if (order[0] === 'left') {
-                    processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, pageSpread: readingDirection === READING_DIRECTIONS.RTL ? 'right' : 'left' });
-                    processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, pageSpread: readingDirection === READING_DIRECTIONS.RTL ? 'left' : 'right' });
+                    processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, type: PAGE_TYPES.SPREAD_PART_1 });
+                    processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, type: PAGE_TYPES.SPREAD_PART_2 });
                 } else {
-                    processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, pageSpread: readingDirection === READING_DIRECTIONS.RTL ? 'right' : 'left' });
-                    processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, pageSpread: readingDirection === READING_DIRECTIONS.RTL ? 'left' : 'right' });
+                    processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, type: PAGE_TYPES.SPREAD_PART_1 });
+                    processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, type: PAGE_TYPES.SPREAD_PART_2 });
                 }
             }
         }
@@ -176,11 +169,8 @@ export async function createEpub({
                 finalExt = 'jpg';
                 finalMime = 'jpeg';
             }
-            let pageSpreadProp;
-            if (isSpread(img.width, img.height)) {
-                pageSpreadProp = 'center';
-            }
-            processedImages.push({ blob: res.blob, ext: finalExt, mimeType: finalMime, suffix: '', width: res.width, height: res.height, pageSpread: pageSpreadProp });
+            const pageType = isSpread(img.width, img.height) ? PAGE_TYPES.SPREAD_CENTER : PAGE_TYPES.NORMAL;
+            processedImages.push({ blob: res.blob, ext: finalExt, mimeType: finalMime, suffix: '', width: res.width, height: res.height, type: pageType });
         }
 
         for (const procImg of processedImages) {
@@ -220,12 +210,7 @@ export async function createEpub({
             const pageId = `page${globalImageCounter}`;
             manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>\n`;
 
-            let spineProps = '';
-            if (isLandscapeSpread) {
-                spineProps = ` properties="page-spread-${expectedNextSide}"`;
-                expectedNextSide = (expectedNextSide === startSide) ? endSide : startSide;
-            }
-            spineItems += `<itemref idref="${pageId}"${spineProps}/>\n`;
+            spinePages.push({ id: pageId, type: procImg.type });
 
             globalImageCounter++;
         }
@@ -236,6 +221,21 @@ export async function createEpub({
     }
 
     onProgress(85);
+
+    const spreadProps = calculatePageSpreads({
+        pages: spinePages,
+        readingDirection,
+        isLandscapeSpread,
+        isOffsetFirstPage
+    });
+
+    let spineItems = '';
+    for (let i = 0; i < spinePages.length; i++) {
+        const pageEntry = spinePages[i];
+        const spreadProp = spreadProps[i];
+        const propAttr = getPageSpreadProperty(spreadProp);
+        spineItems += `<itemref idref="${pageEntry.id}"${propAttr}/>\n`;
+    }
 
     const spineDirectionAttr = getSpineDirectionAttribute(readingDirection);
     const primaryWritingMode = readingDirection === READING_DIRECTIONS.RTL ? 'horizontal-rl' : 'horizontal-lr';
