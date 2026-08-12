@@ -82,9 +82,20 @@
                 <label for="quality-input">JPEG Quality (1-100):</label>
                 <input type="number" id="quality-input" min="1" max="100" value="85" title="Optimal value is around 85">
             </div>
-            <label class="checkbox-label">
-                <input type="checkbox" id="kindle-pw12-checkbox">
-                Fit to Kindle PW 12 (1264x1680)
+            <div class="select-group" id="device-group">
+                <label for="device-select">Target Device Profile:</label>
+                <select id="device-select">
+                    <option value="original">Original (No resize)</option>
+                    <option value="kindle_pw12" selected>Kindle Paperwhite 12 (7" - 1272x1696)</option>
+                    <option value="kindle_pw11">Kindle Paperwhite 11 (6.8" - 1236x1648)</option>
+                    <option value="kindle_oasis">Kindle Oasis 2/3 (7" - 1264x1680)</option>
+                    <option value="kindle_pw34">Kindle Paperwhite 3/4 / Voyage / Basic (1072x1448)</option>
+                    <option value="kindle_scribe">Kindle Scribe (10.2" - 1860x2480)</option>
+                </select>
+            </div>
+            <label class="checkbox-label" id="upscale-group">
+                <input type="checkbox" id="upscale-checkbox" checked>
+                Upscale small images to device resolution
             </label>
             <label class="checkbox-label">
                 <input type="checkbox" id="grayscale-checkbox">

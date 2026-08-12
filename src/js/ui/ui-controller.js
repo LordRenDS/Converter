@@ -1,4 +1,4 @@
-import { COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY } from '../modules/constants.js';
+import { COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY, getDevicePreset } from '../modules/constants.js';
 import { extractImagesFromCbz } from '../modules/cbz-reader.js';
 import { createEpub } from '../modules/epub-builder.js';
 import { downloadBlob } from '../modules/file-downloader.js';
@@ -27,7 +27,8 @@ export class UIController {
         this.optimizeCheckbox = document.getElementById('optimize-checkbox');
         this.directionSelect = document.getElementById('direction-select');
         this.formatSelect = document.getElementById('format-select');
-        this.kindlePw12Checkbox = document.getElementById('kindle-pw12-checkbox');
+        this.deviceSelect = document.getElementById('device-select');
+        this.upscaleCheckbox = document.getElementById('upscale-checkbox');
         this.grayscaleCheckbox = document.getElementById('grayscale-checkbox');
         this.formatGroup = document.getElementById('format-group');
         this.fileList = document.getElementById('file-list');
@@ -212,7 +213,9 @@ export class UIController {
         const coverSource = selectedCoverRadio ? selectedCoverRadio.value : COVER_SOURCES.PAGE;
         const coverPageNumber = parseInt(this.coverPageInput ? this.coverPageInput.value : '1', 10) || 1;
         const customCoverFile = this.coverInput && this.coverInput.files.length > 0 ? this.coverInput.files[0] : null;
-        const isKindleFitEnabled = this.kindlePw12Checkbox ? this.kindlePw12Checkbox.checked : false;
+        const selectedDeviceId = this.deviceSelect ? this.deviceSelect.value : 'original';
+        const targetDevice = getDevicePreset(selectedDeviceId);
+        const isUpscaleEnabled = this.upscaleCheckbox ? this.upscaleCheckbox.checked : true;
         const isGrayscaleEnabled = this.grayscaleCheckbox ? this.grayscaleCheckbox.checked : false;
         const isLandscapeSpread = this.landscapeSpreadCheckbox ? this.landscapeSpreadCheckbox.checked : false;
         const isOffsetFirstPage = this.offsetFirstPageCheckbox ? this.offsetFirstPageCheckbox.checked : false;
@@ -247,7 +250,8 @@ export class UIController {
                     customCoverFile,
                     coverSource,
                     coverPageNumber,
-                    isKindleFitEnabled,
+                    targetDevice,
+                    isUpscaleEnabled,
                     isGrayscaleEnabled,
                     jpegQuality,
                     isLandscapeSpread,
@@ -282,7 +286,8 @@ export class UIController {
                         customCoverFile,
                         coverSource,
                         coverPageNumber,
-                        isKindleFitEnabled,
+                        targetDevice,
+                        isUpscaleEnabled,
                         isGrayscaleEnabled,
                         jpegQuality,
                         isLandscapeSpread,

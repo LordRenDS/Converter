@@ -716,6 +716,72 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertTrue(data['hasBorderColor'])
         self.assertTrue(data['hasOrientationLock'])
 
+    def test_index_html_device_options(self):
+        index_path = REPO_ROOT / 'index.html'
+        content = index_path.read_text(encoding='utf-8')
+        self.assertIn('id="device-select"', content)
+        self.assertIn('value="original"', content)
+        self.assertIn('value="kindle_pw12"', content)
+        self.assertIn('value="kindle_pw11"', content)
+        self.assertIn('value="kindle_oasis"', content)
+        self.assertIn('value="kindle_pw34"', content)
+        self.assertIn('value="kindle_scribe"', content)
+        self.assertIn('id="upscale-checkbox"', content)
+        self.assertNotIn('id="kindle-pw12-checkbox"', content)
+
+    def test_ui_controller_dom_binding(self):
+        code = self.base_env + r"""
+        import { UIController } from './src/js/ui/ui-controller.js';
+
+        const elements = {
+            'drop-zone': { addEventListener: () => {}, classList: { add: () => {}, remove: () => {} } },
+            'file-input': { addEventListener: () => {} },
+            'convert-btn': { addEventListener: () => {}, disabled: false },
+            'progress-container': { style: {} },
+            'progress-fill': { style: {} },
+            'status-text': { textContent: '' },
+            'title-input': { value: 'My Book' },
+            'author-input': { value: 'My Author' },
+            'cover-input': { files: [] },
+            'cover-page-input': { value: '1' },
+            'cover-page-input-group': { style: {} },
+            'cover-file-input-group': { style: {} },
+            'optimize-checkbox': { checked: false },
+            'direction-select': { value: 'ltr' },
+            'format-select': { value: 'original', addEventListener: () => {} },
+            'device-select': { value: 'kindle_pw11' },
+            'upscale-checkbox': { checked: false },
+            'grayscale-checkbox': { checked: false },
+            'format-group': { style: {} },
+            'file-list': { innerHTML: '', style: {}, appendChild: () => {} },
+            'merge-group': { style: {} },
+            'merge-checkbox': { checked: false, disabled: false },
+            'quality-group': { style: {} },
+            'quality-input': { value: '85' },
+            'landscape-spread-checkbox': { checked: false },
+            'offset-first-page-checkbox': { checked: false }
+        };
+
+        globalThis.document = {
+            getElementById: (id) => elements[id] || null,
+            querySelectorAll: (sel) => []
+        };
+
+        const controller = new UIController();
+        console.log(JSON.stringify({
+            hasDeviceSelect: !!controller.deviceSelect,
+            deviceSelectValue: controller.deviceSelect.value,
+            hasUpscaleCheckbox: !!controller.upscaleCheckbox,
+            upscaleChecked: controller.upscaleCheckbox.checked
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertTrue(data['hasDeviceSelect'])
+        self.assertEqual(data['deviceSelectValue'], 'kindle_pw11')
+        self.assertTrue(data['hasUpscaleCheckbox'])
+        self.assertFalse(data['upscaleChecked'])
+
 if __name__ == '__main__':
     unittest.main()
+
 
