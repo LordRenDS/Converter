@@ -2,92 +2,12 @@ import { describe, it, expect, jest } from '@jest/globals';
 import { getSpineDirectionAttribute, createEpub } from '../src/js/modules/epub-builder.js';
 import { READING_DIRECTIONS, COVER_SOURCES } from '../src/js/modules/constants.js';
 
-// Setup environment mocks
-if (typeof globalThis.Blob === 'undefined') {
-    globalThis.Blob = class Blob {
-        constructor(parts = [], options = {}) {
-            this.parts = parts;
-            this.type = options?.type || '';
-            this.width = options?.width || (parts && parts[0] && parts[0].width) || 1000;
-            this.height = options?.height || (parts && parts[0] && parts[0].height) || 1500;
-        }
-    };
+function createMockBlob({ width = 1000, height = 1500, type = 'image/jpeg' } = {}) {
+    const blob = new globalThis.Blob([], { type });
+    blob.width = width;
+    blob.height = height;
+    return blob;
 }
-
-globalThis.HTMLCanvasElement = class HTMLCanvasElement {
-    constructor() {
-        this.width = 0;
-        this.height = 0;
-    }
-    getContext() {
-        return {
-            drawImage: jest.fn(),
-            getImageData: jest.fn(() => ({ data: new Uint8ClampedArray(4) })),
-            putImageData: jest.fn()
-        };
-    }
-    toBlob(cb, mimeType) {
-        const blob = new globalThis.Blob(['mock-canvas'], {
-            type: mimeType,
-            width: this.width,
-            height: this.height
-        });
-        setTimeout(() => cb(blob), 0);
-    }
-};
-
-globalThis.HTMLImageElement = class HTMLImageElement {
-    constructor() {
-        this.width = 1000;
-        this.height = 1500;
-    }
-};
-
-globalThis.Image = class Image extends globalThis.HTMLImageElement {
-    constructor() {
-        super();
-        this._width = 1000;
-        this._height = 1500;
-        this.onload = null;
-        this.onerror = null;
-    }
-    get width() { return this._width; }
-    set width(w) { this._width = w; }
-    get height() { return this._height; }
-    set height(h) { this._height = h; }
-    get src() { return this._src; }
-    set src(val) {
-        this._src = val;
-        if (val && val.includes('?w=')) {
-            const match = val.match(/w=(\d+)&h=(\d+)/);
-            if (match) {
-                this._width = parseInt(match[1], 10);
-                this._height = parseInt(match[2], 10);
-            }
-        }
-        setTimeout(() => {
-            if (this.onload) this.onload();
-        }, 0);
-    }
-};
-
-globalThis.document = {
-    createElement: (tag) => {
-        if (tag === 'canvas') {
-            return new globalThis.HTMLCanvasElement();
-        }
-        return {};
-    }
-};
-
-globalThis.URL = {
-    createObjectURL: jest.fn((blob) => {
-        const w = blob?.width || 1000;
-        const h = blob?.height || 1500;
-        return `blob:mock?w=${w}&h=${h}`;
-    }),
-    revokeObjectURL: jest.fn()
-};
 
 function createMockZip() {
     const filesCreated = {};
@@ -140,7 +60,7 @@ describe('epub-builder module', () => {
             const mockImages = [
                 {
                     name: 'page_1.jpg',
-                    async: jest.fn().mockResolvedValue(new globalThis.Blob([], { width: 1000, height: 1500, type: 'image/jpeg' }))
+                    async: jest.fn().mockResolvedValue(createMockBlob({ width: 1000, height: 1500, type: 'image/jpeg' }))
                 }
             ];
 
@@ -170,10 +90,10 @@ describe('epub-builder module', () => {
         it('should set page-spread-right and page-spread-left for RTL single pages', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p3.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p4.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p3.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p4.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -197,10 +117,10 @@ describe('epub-builder module', () => {
         it('should set page-spread-left and page-spread-right for LTR single pages', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p3.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p4.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p3.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p4.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -224,9 +144,9 @@ describe('epub-builder module', () => {
         it('should split wide spread into S1 and S2 and apply backward pass for RTL', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -251,9 +171,9 @@ describe('epub-builder module', () => {
         it('should split wide spread into S1 and S2 and apply backward pass for LTR', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -278,10 +198,10 @@ describe('epub-builder module', () => {
         it('should handle three single pages before spread in RTL', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p3.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p3.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) }
             ];
 
             await createEpub({
@@ -309,9 +229,9 @@ describe('epub-builder module', () => {
         it('should assign properties="page-spread-center" for unsplit wide spreads in RTL', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -335,9 +255,9 @@ describe('epub-builder module', () => {
         it('should assign properties="page-spread-center" for unsplit wide spreads in LTR', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -363,14 +283,15 @@ describe('epub-builder module', () => {
         it('should assign properties="page-spread-right" to custom cover in RTL', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
-            const customCover = {
-                name: 'custom_cover.jpg',
+            const customCover = createMockBlob({
                 width: 1000,
-                height: 1500
-            };
+                height: 1500,
+                type: 'image/jpeg'
+            });
+            customCover.name = 'custom_cover.jpg';
 
             await createEpub({
                 images: mockImages,
@@ -393,14 +314,15 @@ describe('epub-builder module', () => {
         it('should assign properties="page-spread-left" to custom cover in LTR', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
-            const customCover = {
-                name: 'custom_cover.jpg',
+            const customCover = createMockBlob({
                 width: 1000,
-                height: 1500
-            };
+                height: 1500,
+                type: 'image/jpeg'
+            });
+            customCover.name = 'custom_cover.jpg';
 
             await createEpub({
                 images: mockImages,
@@ -425,9 +347,9 @@ describe('epub-builder module', () => {
         it('should not include page-spread properties on itemref elements and set spread to auto in RTL', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -453,8 +375,8 @@ describe('epub-builder module', () => {
         it('should not include page-spread properties in LTR when isLandscapeSpread is false', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -480,10 +402,10 @@ describe('epub-builder module', () => {
         it('should offset initial page spread in RTL (left, right, left, right)', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p3.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p4.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p3.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p4.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
@@ -506,10 +428,10 @@ describe('epub-builder module', () => {
         it('should offset initial page spread in LTR (right, left, right, left)', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
-                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p3.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
-                { name: 'p4.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p3.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p4.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
             ];
 
             await createEpub({
