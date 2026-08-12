@@ -171,7 +171,7 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(res['nullAlign'], 'center')
         self.assertEqual(res['undefinedAlign'], 'center')
 
-    def test_xhtml_page_alignment_and_css_reset(self):
+    def test_landscape_spread_xhtml_alignment_rtl(self):
         js_code = self.base_env + """
         async function run() {
             const { zip, files } = createMockZip();
@@ -206,7 +206,7 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertIn('div.page-container { text-align: left; margin: 0; padding: 0; }', page0)
         self.assertIn('div.page-container { text-align: right; margin: 0; padding: 0; }', page1)
 
-    def test_xhtml_page_alignment_ltr(self):
+    def test_landscape_spread_xhtml_alignment_ltr(self):
         js_code = self.base_env + """
         async function run() {
             const { zip, files } = createMockZip();
@@ -236,15 +236,52 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         page0 = res['page0']
         page1 = res['page1']
 
+        self.assertIn('@page { margin: 0; }', page0)
+        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
         self.assertIn('div.page-container { text-align: right; margin: 0; padding: 0; }', page0)
         self.assertIn('div.page-container { text-align: left; margin: 0; padding: 0; }', page1)
 
-    def test_xhtml_custom_cover_and_center_page_alignment(self):
+    def test_landscape_spread_disabled_xhtml_alignment(self):
         js_code = self.base_env + """
         async function run() {
             const { zip, files } = createMockZip();
             const mockImages = [
-                { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+                { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
+                { name: 'p3.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+            ];
+
+            await createEpub({
+                images: mockImages,
+                title: 'Disabled Spread XHTML Alignment Test',
+                author: 'Author Disabled',
+                readingDirection: READING_DIRECTIONS.RTL,
+                isLandscapeSpread: false,
+                jszipLib: class { constructor() { return zip; } }
+            });
+
+            return {
+                page0: files['OEBPS/Text/page_0000.xhtml'],
+                page1: files['OEBPS/Text/page_0001.xhtml'],
+                page2: files['OEBPS/Text/page_0002.xhtml']
+            };
+        }
+        run().then(res => console.log(JSON.stringify(res)));
+        """
+        res = run_js_eval(js_code)
+        for page_key in ['page0', 'page1', 'page2']:
+            page = res[page_key]
+            self.assertIn('@page { margin: 0; }', page)
+            self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page)
+            self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page)
+
+    def test_cover_page_xhtml_reset(self):
+        js_code = self.base_env + """
+        async function run() {
+            const { zip, files } = createMockZip();
+            const mockImages = [
+                { name: 'page1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
+                { name: 'page2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
             ];
             const customCover = {
                 name: 'custom_cover.jpg',
@@ -254,33 +291,45 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
             await createEpub({
                 images: mockImages,
-                title: 'Cover and Center Test',
-                author: 'Author CC',
+                title: 'Cover XHTML Reset Test',
+                author: 'Author Cover',
                 coverSource: COVER_SOURCES.CUSTOM,
                 customCoverFile: customCover,
-                isOptimizeEnabled: false,
                 isLandscapeSpread: true,
                 jszipLib: class { constructor() { return zip; } }
             });
 
+            const { zip: zip2, files: files2 } = createMockZip();
+            await createEpub({
+                images: mockImages,
+                title: 'Regular Cover XHTML Reset Test',
+                author: 'Author Regular Cover',
+                coverSource: COVER_SOURCES.PAGE,
+                coverPageNumber: 1,
+                isLandscapeSpread: false,
+                jszipLib: class { constructor() { return zip2; } }
+            });
+
             return {
-                cover: files['OEBPS/Text/cover.xhtml'],
-                page0: files['OEBPS/Text/page_0000.xhtml']
+                customCover: files['OEBPS/Text/cover.xhtml'],
+                regularCoverPage: files2['OEBPS/Text/page_0000.xhtml']
             };
         }
         run().then(res => console.log(JSON.stringify(res)));
         """
         res = run_js_eval(js_code)
-        cover = res['cover']
-        page0 = res['page0']
+        customCover = res['customCover']
+        regularCover = res['regularCoverPage']
 
-        self.assertIn('@page { margin: 0; }', cover)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', cover)
-        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', cover)
+        # Verify custom cover reset and alignment
+        self.assertIn('@page { margin: 0; }', customCover)
+        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', customCover)
+        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', customCover)
 
-        self.assertIn('@page { margin: 0; }', page0)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
-        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
+        # Verify regular cover page reset and alignment
+        self.assertIn('@page { margin: 0; }', regularCover)
+        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', regularCover)
+        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', regularCover)
 
     def test_create_epub_without_jszip_throws(self):
         js_code = self.base_env + """
