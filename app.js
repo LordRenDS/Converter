@@ -467,8 +467,23 @@ if (typeof document !== 'undefined') {
                     const pageId = `page${globalImageCounter}`;
                     manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>
 `;
-                    spineItems += `<itemref idref="${pageId}"/>
+
+                    let spineProps = '';
+                    if (isLandscapeSpread) {
+                        let isLTR = readingDirection === 'ltr';
+                        let isEven = (spineIndex % 2 === 0);
+                        if (isOffsetFirstPage) {
+                            isEven = !isEven;
+                        }
+                        if (isLTR) {
+                            spineProps = isEven ? ' properties="page-spread-right"' : ' properties="page-spread-left"';
+                        } else {
+                            spineProps = isEven ? ' properties="page-spread-left"' : ' properties="page-spread-right"';
+                        }
+                    }
+                    spineItems += `<itemref idref="${pageId}"${spineProps}/>
 `;
+                    spineIndex++;
 
                     globalImageCounter++;
                 }
@@ -480,7 +495,7 @@ if (typeof document !== 'undefined') {
 
             onProgress(85);
 
-            const spineDirectionAttr = isOptimizeEnabled ? ConverterLogic.getSpineDirectionAttribute(readingDirection) : ' page-progression-direction="ltr"';
+            const spineDirectionAttr = ConverterLogic.getSpineDirectionAttribute(readingDirection);
 
             const primaryWritingMode = readingDirection === 'rtl' ? 'horizontal-rl' : 'horizontal-lr';
             const contentOpf = `<?xml version="1.0" encoding="utf-8"?>
