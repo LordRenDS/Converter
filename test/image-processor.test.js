@@ -45,7 +45,8 @@ describe('image-processor module', () => {
 
             expect(img).toBeDefined();
             expect(globalThis.URL.createObjectURL).toHaveBeenCalledWith(blob);
-            expect(globalThis.URL.revokeObjectURL).toHaveBeenCalledWith('mock-url');
+            const createdUrl = globalThis.URL.createObjectURL.mock.results[0].value;
+            expect(globalThis.URL.revokeObjectURL).toHaveBeenCalledWith(createdUrl);
         });
     });
 
