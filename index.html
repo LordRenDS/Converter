@@ -23,6 +23,8 @@
         <div class="metadata-form">
             <input type="text" id="title-input" placeholder="Book Title (optional)">
             <input type="text" id="author-input" placeholder="Author (optional)">
+        </div>
+        <div class="options-form">
                         <div class="cover-options-group">
                 <label>Cover Image Source:</label>
                 <div class="radio-group">
@@ -46,8 +48,14 @@
                     <input type="file" id="cover-input" accept=".jpg,.jpeg,.png">
                 </div>
             </div>
-        </div>
-        <div class="options-form">
+            <label class="checkbox-label">
+                <input type="checkbox" id="landscape-spread-checkbox">
+                Landscape Spread
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" id="offset-first-page-checkbox">
+                Offset First Page
+            </label>
             <label class="checkbox-label" id="merge-group">
                 <input type="checkbox" id="merge-checkbox" disabled>
                 Merge into single EPUB
