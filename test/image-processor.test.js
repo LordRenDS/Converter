@@ -7,7 +7,7 @@ import {
     processImage,
     splitImage
 } from '../src/js/modules/image-processor.js';
-import { READING_DIRECTIONS, OUTPUT_FORMATS } from '../src/js/modules/constants.js';
+import { READING_DIRECTIONS, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY } from '../src/js/modules/constants.js';
 
 describe('image-processor module', () => {
     afterEach(() => {
@@ -80,11 +80,22 @@ describe('image-processor module', () => {
             expect(result.blob).toBeDefined();
         });
 
-        it('should not resize for Kindle if image is smaller than target', async () => {
+        it('should upscale for Kindle if image is smaller than target and upscale is enabled (default)', async () => {
             const img = { width: 1000, height: 1000 };
             const originalBlob = new globalThis.Blob([''], { type: 'image/jpeg' });
 
             const result = await processImage(img, originalBlob, true, false, 'image/jpeg');
+
+            expect(result.width).toBe(1272);
+            expect(result.height).toBe(1272);
+            expect(result.blob).toBeDefined();
+        });
+
+        it('should not resize for Kindle if image is smaller than target and upscale is disabled', async () => {
+            const img = { width: 1000, height: 1000 };
+            const originalBlob = new globalThis.Blob([''], { type: 'image/jpeg' });
+
+            const result = await processImage(img, originalBlob, true, false, 'image/jpeg', OUTPUT_FORMATS.ORIGINAL, DEFAULT_JPEG_QUALITY, false);
 
             expect(result.width).toBe(1000);
             expect(result.height).toBe(1000);
