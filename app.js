@@ -312,7 +312,7 @@ if (typeof document !== 'undefined') {
 
         // EPUB Generation logic
 
-        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, outputFormat, customCoverFile, coverSource, coverPageNumber, isKindleFitEnabled, isGrayscaleEnabled, jpegQuality, onProgress) {
+        async function createEpub(images, title, author, isOptimizeEnabled, readingDirection, outputFormat, customCoverFile, coverSource, coverPageNumber, isKindleFitEnabled, isGrayscaleEnabled, jpegQuality, onProgress, isLandscapeSpread, isOffsetFirstPage) {
             const epubZip = new JSZip();
 
             epubZip.file("mimetype", "application/epub+zip");
@@ -332,6 +332,7 @@ if (typeof document !== 'undefined') {
             let manifestItems = "";
             let spineItems = "";
             let globalImageCounter = 0;
+            let spineIndex = 0;
             let coverId = null;
 
             if (coverSource === 'custom' && customCoverFile) {
@@ -366,7 +367,17 @@ if (typeof document !== 'undefined') {
 
                 const coverPageId = 'cover-page';
                 manifestItems += `<item id="${coverPageId}" href="Text/${coverPageName}" media-type="application/xhtml+xml"/>\n`;
-                spineItems += `<itemref idref="${coverPageId}"/>\n`;
+                                let coverSpineProps = '';
+                if (isLandscapeSpread) {
+                    let isLTR = readingDirection === 'ltr';
+                    if (isOffsetFirstPage) {
+                        coverSpineProps = isLTR ? ' properties="page-spread-right"' : ' properties="page-spread-left"';
+                    } else {
+                        coverSpineProps = isLTR ? ' properties="page-spread-left"' : ' properties="page-spread-right"';
+                    }
+                }
+                spineItems += `<itemref idref="${coverPageId}"${coverSpineProps}/>\n`;
+                spineIndex++;
             }
 
             for (let i = 0; i < images.length; i++) {
@@ -482,7 +493,7 @@ if (typeof document !== 'undefined') {
     ${coverId ? `<meta name="cover" content="${coverId}"/>` : ''}
     <meta property="rendition:layout">pre-paginated</meta>
     <meta property="rendition:orientation">auto</meta>
-    <meta property="rendition:spread">auto</meta>
+    <meta property="rendition:spread">${isLandscapeSpread ? 'landscape' : 'auto'}</meta>
     <meta name="book-type" content="comic"/>
     <meta name="fixed-layout" content="true"/>
     <meta name="primary-writing-mode" content="${primaryWritingMode}"/>
@@ -558,6 +569,10 @@ if (typeof document !== 'undefined') {
             const customCoverFile = coverInput && coverInput.files.length > 0 ? coverInput.files[0] : null;
             const isKindleFitEnabled = kindlePw12Checkbox ? kindlePw12Checkbox.checked : false;
             const isGrayscaleEnabled = grayscaleCheckbox ? grayscaleCheckbox.checked : false;
+            const landscapeSpreadCheckbox = document.getElementById("landscape-spread-checkbox");
+            const isLandscapeSpread = landscapeSpreadCheckbox ? landscapeSpreadCheckbox.checked : false;
+            const offsetFirstPageCheckbox = document.getElementById("offset-first-page-checkbox");
+            const isOffsetFirstPage = offsetFirstPageCheckbox ? offsetFirstPageCheckbox.checked : false;
 
             progressContainer.style.display = "block";
             progressFill.style.backgroundColor = 'var(--primary-color)';
@@ -593,7 +608,9 @@ if (typeof document !== 'undefined') {
                         isKindleFitEnabled,
                         isGrayscaleEnabled,
                         jpegQuality,
-                        (percent) => setProgress(percent, "Merging and creating EPUB...")
+                        (percent) => setProgress(percent, "Merging and creating EPUB..."),
+                        isLandscapeSpread,
+                        isOffsetFirstPage
                     );
 
                     setProgress(100, "Done! Downloading...");
@@ -627,7 +644,9 @@ if (typeof document !== 'undefined') {
                         isKindleFitEnabled,
                         isGrayscaleEnabled,
                         jpegQuality,
-                        (percent) => setProgress(percent, `Processing file ${i+1}/${currentFiles.length}...`)
+                        (percent) => setProgress(percent, `Processing file ${i+1}/${currentFiles.length}...`),
+                        isLandscapeSpread,
+                        isOffsetFirstPage
                         );
 
                         setProgress(95, `Downloading file ${i+1}/${currentFiles.length}...`);
