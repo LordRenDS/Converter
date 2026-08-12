@@ -1,5 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { getSpineDirectionAttribute, createEpub, getPageSpreadAlignment } from '../src/js/modules/epub-builder.js';
+import { getSpineDirectionAttribute, createEpub } from '../src/js/modules/epub-builder.js';
 import { READING_DIRECTIONS, COVER_SOURCES } from '../src/js/modules/constants.js';
 
 function createMockBlob({ width = 1000, height = 1500, type = 'image/jpeg' } = {}) {
@@ -40,25 +40,7 @@ function createMockZip() {
 }
 
 describe('epub-builder module', () => {
-    describe('getPageSpreadAlignment', () => {
-        it('should return right alignment for left spread property', () => {
-            expect(getPageSpreadAlignment('left')).toBe('right');
-        });
 
-        it('should return left alignment for right spread property', () => {
-            expect(getPageSpreadAlignment('right')).toBe('left');
-        });
-
-        it('should return center alignment for center spread property', () => {
-            expect(getPageSpreadAlignment('center')).toBe('center');
-        });
-
-        it('should return center alignment for empty or unspecified spread property', () => {
-            expect(getPageSpreadAlignment('')).toBe('center');
-            expect(getPageSpreadAlignment(null)).toBe('center');
-            expect(getPageSpreadAlignment(undefined)).toBe('center');
-        });
-    });
 
     describe('getSpineDirectionAttribute', () => {
         it('should return page-progression-direction="ltr" for LTR', () => {
@@ -492,7 +474,7 @@ describe('epub-builder module', () => {
             expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
         });
 
-        it('should align left spread page to right and right spread page to left in RTL landscape', async () => {
+        it('should always use text-align center for spread pages in RTL landscape (e-reader handles positioning)', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
                 { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
@@ -513,20 +495,17 @@ describe('epub-builder module', () => {
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
             const opf = filesCreated['OEBPS/content.opf'];
 
-            // In RTL without offset: page0=spreadProp 'right' -> seam left; page1=spreadProp 'left' -> seam right
-            // CSS default = seam alignment (non-JS reader fallback)
-            expect(page0).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
-            expect(page1).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
-            // JS block detects device orientation via window.screen
-            expect(page0).toContain("var sa = 'left';");
-            expect(page0).toContain('window.screen.width > window.screen.height');
-            expect(page1).toContain("var sa = 'right';");
-            // Manifest items have properties="scripted"
-            expect(opf).toContain('href="Text/page_0000.xhtml" media-type="application/xhtml+xml" properties="scripted"');
-            expect(opf).toContain('href="Text/page_0001.xhtml" media-type="application/xhtml+xml" properties="scripted"');
+            // Always text-align: center — e-reader positions pages via spine page-spread-* props
+            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            // No inline JS orientation detection
+            expect(page0).not.toContain('<script');
+            expect(page1).not.toContain('<script');
+            // No scripted properties in manifest
+            expect(opf).not.toContain('properties="scripted"');
         });
 
-        it('should align left spread page to right and right spread page to left in LTR landscape', async () => {
+        it('should always use text-align center for spread pages in LTR landscape (e-reader handles positioning)', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
                 { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
@@ -547,17 +526,14 @@ describe('epub-builder module', () => {
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
             const opf = filesCreated['OEBPS/content.opf'];
 
-            // In LTR without offset: page0=spreadProp 'left' -> seam right; page1=spreadProp 'right' -> seam left
-            // CSS default = seam alignment (non-JS reader fallback)
-            expect(page0).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
-            expect(page1).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
-            // JS block detects device orientation via window.screen
-            expect(page0).toContain("var sa = 'right';");
-            expect(page0).toContain('window.screen.width > window.screen.height');
-            expect(page1).toContain("var sa = 'left';");
-            // Manifest items have properties="scripted"
-            expect(opf).toContain('href="Text/page_0000.xhtml" media-type="application/xhtml+xml" properties="scripted"');
-            expect(opf).toContain('href="Text/page_0001.xhtml" media-type="application/xhtml+xml" properties="scripted"');
+            // Always text-align: center — e-reader positions pages via spine page-spread-* props
+            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            // No inline JS orientation detection
+            expect(page0).not.toContain('<script');
+            expect(page1).not.toContain('<script');
+            // No scripted properties in manifest
+            expect(opf).not.toContain('properties="scripted"');
         });
 
         it('should align unsplit wide spread page to center in landscape mode', async () => {

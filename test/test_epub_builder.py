@@ -37,7 +37,7 @@ def run_js_eval(code: str):
 class TestEpubBuilderIntegration(unittest.TestCase):
     def setUp(self):
         self.base_env = r"""
-        import { createEpub, getSpineDirectionAttribute, getPageSpreadAlignment } from './src/js/modules/epub-builder.js';
+        import { createEpub, getSpineDirectionAttribute } from './src/js/modules/epub-builder.js';
         import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS } from './src/js/modules/constants.js';
 
         // Mock environment
@@ -153,23 +153,7 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(res['ltrAttr'], ' page-progression-direction="ltr"')
         self.assertEqual(res['rtlAttr'], ' page-progression-direction="rtl"')
 
-    def test_get_page_spread_alignment(self):
-        js_code = self.base_env + """
-        const leftAlign = getPageSpreadAlignment('left');
-        const rightAlign = getPageSpreadAlignment('right');
-        const centerAlign = getPageSpreadAlignment('center');
-        const emptyAlign = getPageSpreadAlignment('');
-        const nullAlign = getPageSpreadAlignment(null);
-        const undefinedAlign = getPageSpreadAlignment(undefined);
-        console.log(JSON.stringify({ leftAlign, rightAlign, centerAlign, emptyAlign, nullAlign, undefinedAlign }));
-        """
-        res = run_js_eval(js_code)
-        self.assertEqual(res['leftAlign'], 'right')
-        self.assertEqual(res['rightAlign'], 'left')
-        self.assertEqual(res['centerAlign'], 'center')
-        self.assertEqual(res['emptyAlign'], 'center')
-        self.assertEqual(res['nullAlign'], 'center')
-        self.assertEqual(res['undefinedAlign'], 'center')
+
 
     def test_landscape_spread_xhtml_alignment_rtl(self):
         js_code = self.base_env + """
@@ -203,14 +187,12 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
         self.assertIn('@page { margin: 0; }', page0)
         self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
-        # CSS default = seam alignment (non-JS reader fallback)
-        # RTL: page0=spreadProp 'right' -> seam left; page1=spreadProp 'left' -> seam right
-        self.assertIn('div.page-container { text-align: left; margin: 0; padding: 0; }', page0)
-        self.assertIn('div.page-container { text-align: right; margin: 0; padding: 0; }', page1)
-        # JS block present and uses window.screen for device orientation
-        self.assertIn("var sa = 'left';", page0)
-        self.assertIn('window.screen.width > window.screen.height', page0)
-        self.assertIn("var sa = 'right';", page1)
+        # Always text-align: center — e-reader handles positioning via spine page-spread-* props
+        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
+        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page1)
+        # No JS block
+        self.assertNotIn('<script', page0)
+        self.assertNotIn('<script', page1)
 
     def test_landscape_spread_xhtml_alignment_ltr(self):
         js_code = self.base_env + """
@@ -244,14 +226,12 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
         self.assertIn('@page { margin: 0; }', page0)
         self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
-        # CSS default = seam alignment (non-JS reader fallback)
-        # LTR: page0=spreadProp 'left' -> seam right; page1=spreadProp 'right' -> seam left
-        self.assertIn('div.page-container { text-align: right; margin: 0; padding: 0; }', page0)
-        self.assertIn('div.page-container { text-align: left; margin: 0; padding: 0; }', page1)
-        # JS block present and uses window.screen for device orientation
-        self.assertIn("var sa = 'right';", page0)
-        self.assertIn('window.screen.width > window.screen.height', page0)
-        self.assertIn("var sa = 'left';", page1)
+        # Always text-align: center — e-reader handles positioning via spine page-spread-* props
+        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
+        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page1)
+        # No JS block
+        self.assertNotIn('<script', page0)
+        self.assertNotIn('<script', page1)
 
     def test_landscape_spread_disabled_xhtml_alignment(self):
         js_code = self.base_env + """

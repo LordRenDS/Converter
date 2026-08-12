@@ -14,18 +14,6 @@ export function getSpineDirectionAttribute(direction) {
 }
 
 /**
- * Returns the CSS text-align property value ('left', 'right', or 'center') for a given page spread property.
- * Pages with spread 'left' align right (towards seam), pages with spread 'right' align left (towards seam).
- * @param {string} spreadProp - 'left', 'right', 'center', or ''
- * @returns {string} 'left', 'right', or 'center'
- */
-export function getPageSpreadAlignment(spreadProp) {
-    if (spreadProp === 'left') return 'right';
-    if (spreadProp === 'right') return 'left';
-    return 'center';
-}
-
-/**
  * Creates an EPUB 3 Blob from a list of image entries and settings.
  * @param {Object} options
  * @param {Array<import('jszip').JSZipObject>} options.images
@@ -255,33 +243,13 @@ export async function createEpub({
     });
 
     for (const page of pagesToGenerate) {
-        const spreadProp = spreadProps[page.spineIndex] || '';
-        const landscapeAlign = getPageSpreadAlignment(spreadProp);
-        // Spread pages: JS detects device screen orientation at runtime.
-        // CSS default = seam alignment (fallback for non-JS readers in landscape spread).
-        // JS overrides: portrait device -> center, landscape device -> seam alignment.
-        const needsScript = landscapeAlign !== 'center';
+        // Manifest item — no scripted property needed (no inline JS)
+        manifestItems += `<item id="${page.pageId}" href="Text/${page.pageName}" media-type="application/xhtml+xml"/>\n`;
 
-        // Add manifest item here (after spread calc), so we can flag scripted pages
-        const scriptedProp = needsScript ? ' properties="scripted"' : '';
-        manifestItems += `<item id="${page.pageId}" href="Text/${page.pageName}" media-type="application/xhtml+xml"${scriptedProp}/>\n`;
-
-        const scriptBlock = needsScript ? `
-  <script type="text/javascript">//<![CDATA[
-  (function() {
-    var sa = '${landscapeAlign}';
-    function upd() {
-      var pc = document.querySelector('.page-container');
-      if (!pc) return;
-      var ls = window.screen && window.screen.width > window.screen.height;
-      pc.style.textAlign = ls ? sa : 'center';
-    }
-    upd();
-    window.addEventListener('resize', upd);
-    try { window.screen.orientation.addEventListener('change', upd); } catch(e) {}
-  })();
-  //]]></script>` : '';
-
+        // Always use text-align: center (matching KCC approach).
+        // The e-reader handles spread positioning via spine page-spread-left/right properties.
+        // In landscape: reader places pages side-by-side per spine props.
+        // In portrait: reader shows single pages centered.
         const xhtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
@@ -290,9 +258,9 @@ export async function createEpub({
   <style type="text/css">
     @page { margin: 0; }
     body { margin: 0; padding: 0; background-color: #FFFFFF; }
-    div.page-container { text-align: ${needsScript ? landscapeAlign : 'center'}; margin: 0; padding: 0; }
+    div.page-container { text-align: center; margin: 0; padding: 0; }
     img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
-  </style>${scriptBlock}
+  </style>
 </head>
 <body>
   <div class="page-container">
