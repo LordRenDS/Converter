@@ -1,4 +1,7 @@
+import { setupBrowserMocks } from './mocks/browser-mocks.js';
 import { extractImagesFromCbz } from '../src/js/modules/cbz-reader.js';
+
+setupBrowserMocks();
 
 describe('cbz-reader module', () => {
     it('should throw an error if JSZip is not available', async () => {

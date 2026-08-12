@@ -1,7 +1,7 @@
 {
-  "name": "cbz-to-epub-converter",
+  "name": "app",
   "version": "1.0.0",
-  "description": "Client-side CBZ to EPUB converter",
+  "description": "",
   "main": "src/js/main.js",
   "type": "module",
   "scripts": {
@@ -11,13 +11,7 @@
     "type": "git",
     "url": "git+https://github.com/LordRenDS/Converter.git"
   },
-  "keywords": [
-    "cbz",
-    "epub",
-    "converter",
-    "manga",
-    "comic"
-  ],
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
