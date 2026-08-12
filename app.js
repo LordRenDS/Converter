@@ -334,6 +334,8 @@ if (typeof document !== 'undefined') {
             let globalImageCounter = 0;
             let spineIndex = 0;
             let coverId = null;
+            let maxWidth = 0;
+            let maxHeight = 0;
 
             if (coverSource === 'custom' && customCoverFile) {
                 // Process custom cover
@@ -349,6 +351,8 @@ if (typeof document !== 'undefined') {
 
                 const coverPageName = 'cover.xhtml';
                 const img = await ConverterLogic.blobToImage(blobData);
+                if (img.width > maxWidth) maxWidth = img.width;
+                if (img.height > maxHeight) maxHeight = img.height;
                 const xhtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
@@ -433,6 +437,9 @@ if (typeof document !== 'undefined') {
                 }
 
                 for (const procImg of processedImages) {
+                    if (procImg.width > maxWidth) maxWidth = procImg.width;
+                    if (procImg.height > maxHeight) maxHeight = procImg.height;
+
                     const imgName = `image_${globalImageCounter.toString().padStart(4, '0')}${procImg.suffix}.${procImg.ext}`;
                     imagesFolder.file(imgName, procImg.blob);
 
@@ -512,6 +519,7 @@ if (typeof document !== 'undefined') {
     <meta name="book-type" content="comic"/>
     <meta name="fixed-layout" content="true"/>
     <meta name="primary-writing-mode" content="${primaryWritingMode}"/>
+    <meta name="original-resolution" content="${maxWidth}x${maxHeight}"/>
   </metadata>
   <manifest>
     ${manifestItems}
