@@ -1,4 +1,4 @@
-import { DEVICE_PRESETS, DEFAULT_JPEG_QUALITY, READING_DIRECTIONS, OUTPUT_FORMATS } from './constants.js';
+import { DEVICE_PRESETS, getDevicePreset, DEFAULT_JPEG_QUALITY, READING_DIRECTIONS, OUTPUT_FORMATS } from './constants.js';
 
 /**
  * Checks if an image is a wide spread (two-page landscape layout).
@@ -64,34 +64,48 @@ export function imageToBlob(canvasOrImg, mimeType, quality = DEFAULT_JPEG_QUALIT
 }
 
 /**
- * Processes an image with optional Kindle resolution fit, grayscale conversion, and format changes.
+ * Processes an image with optional device resolution fit, upscale/downscale scaling, grayscale conversion, and format changes.
  * @param {HTMLImageElement} img 
  * @param {Blob} originalBlob 
- * @param {boolean} isKindleFit 
+ * @param {boolean | string | { width: number, height: number }} targetDeviceOrFit 
  * @param {boolean} isGrayscale 
  * @param {string} mimeType 
  * @param {string} outputFormat 
  * @param {number} quality 
+ * @param {boolean} isUpscale 
  * @returns {Promise<{ blob: Blob, width: number, height: number }>}
  */
 export async function processImage(
     img,
     originalBlob,
-    isKindleFit,
-    isGrayscale,
-    mimeType,
+    targetDeviceOrFit = false,
+    isGrayscale = false,
+    mimeType = 'image/jpeg',
     outputFormat = OUTPUT_FORMATS.ORIGINAL,
-    quality = DEFAULT_JPEG_QUALITY
+    quality = DEFAULT_JPEG_QUALITY,
+    isUpscale = true
 ) {
     let width = img.width;
     let height = img.height;
     let needsProcessing = false;
 
-    if (isKindleFit) {
-        const targetWidth = DEVICE_PRESETS.KINDLE_PW12.width;
-        const targetHeight = DEVICE_PRESETS.KINDLE_PW12.height;
+    let targetWidth = 0;
+    let targetHeight = 0;
 
-        if (width > targetWidth || height > targetHeight) {
+    if (targetDeviceOrFit === true) {
+        targetWidth = DEVICE_PRESETS.KINDLE_PW12.width;
+        targetHeight = DEVICE_PRESETS.KINDLE_PW12.height;
+    } else if (targetDeviceOrFit) {
+        const preset = getDevicePreset(targetDeviceOrFit);
+        targetWidth = preset ? preset.width : 0;
+        targetHeight = preset ? preset.height : 0;
+    }
+
+    if (targetWidth > 0 && targetHeight > 0) {
+        const isLarger = width > targetWidth || height > targetHeight;
+        const isSmaller = width < targetWidth && height < targetHeight;
+
+        if (isLarger || (isUpscale && isSmaller)) {
             const ratio = Math.min(targetWidth / width, targetHeight / height);
             width = Math.round(width * ratio);
             height = Math.round(height * ratio);
@@ -119,6 +133,15 @@ export async function processImage(
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+        if ('imageSmoothingEnabled' in ctx) {
+            ctx.imageSmoothingEnabled = true;
+        }
+        if ('imageSmoothingQuality' in ctx) {
+            ctx.imageSmoothingQuality = 'high';
+        }
+    }
 
     ctx.drawImage(img, 0, 0, width, height);
 

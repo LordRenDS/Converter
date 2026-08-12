@@ -629,5 +629,38 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(data['oasis'], {'width': 1264, 'height': 1680})
         self.assertEqual(data['original'], {'width': 0, 'height': 0})
 
+    def test_process_image_proportional_scaling(self):
+        code = self.base_env + r"""
+        import { processImage } from './src/js/modules/image-processor.js';
+        import { DEVICE_PRESETS } from './src/js/modules/constants.js';
+
+        // 1. Downscale test: large image 2000x3000 -> Kindle PW12 (1272x1696)
+        // Ratio = min(1272/2000 = 0.636, 1696/3000 = 0.565333) = 0.565333
+        // Width = round(2000 * 0.565333) = 1131, Height = round(3000 * 0.565333) = 1696
+        const imgLarge = new globalThis.Image();
+        imgLarge.width = 2000;
+        imgLarge.height = 3000;
+        const resLarge = await processImage(imgLarge, null, DEVICE_PRESETS.KINDLE_PW12, false, 'image/jpeg', 'original', 0.85, true);
+
+        // 2. Upscale test: small image 600x900 -> Kindle PW12 (1272x1696)
+        // Ratio = min(1272/600 = 2.12, 1696/900 = 1.88444) = 1.88444
+        // Width = round(600 * 1.88444) = 1131, Height = round(900 * 1.88444) = 1696
+        const imgSmall = new globalThis.Image();
+        imgSmall.width = 600;
+        imgSmall.height = 900;
+        const resSmallUpscale = await processImage(imgSmall, null, DEVICE_PRESETS.KINDLE_PW12, false, 'image/jpeg', 'original', 0.85, true);
+        const resSmallNoUpscale = await processImage(imgSmall, null, DEVICE_PRESETS.KINDLE_PW12, false, 'image/jpeg', 'original', 0.85, false);
+
+        console.log(JSON.stringify({
+            large: { width: resLarge.width, height: resLarge.height },
+            smallUpscale: { width: resSmallUpscale.width, height: resSmallUpscale.height },
+            smallNoUpscale: { width: resSmallNoUpscale.width, height: resSmallNoUpscale.height }
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertEqual(data['large'], {'width': 1131, 'height': 1696})
+        self.assertEqual(data['smallUpscale'], {'width': 1131, 'height': 1696})
+        self.assertEqual(data['smallNoUpscale'], {'width': 600, 'height': 900})
+
 if __name__ == '__main__':
     unittest.main()
