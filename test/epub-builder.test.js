@@ -1,5 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { getSpineDirectionAttribute, createEpub } from '../src/js/modules/epub-builder.js';
+import { getSpineDirectionAttribute, createEpub, getPageSpreadAlignment } from '../src/js/modules/epub-builder.js';
 import { READING_DIRECTIONS, COVER_SOURCES } from '../src/js/modules/constants.js';
 
 function createMockBlob({ width = 1000, height = 1500, type = 'image/jpeg' } = {}) {
@@ -40,6 +40,26 @@ function createMockZip() {
 }
 
 describe('epub-builder module', () => {
+    describe('getPageSpreadAlignment', () => {
+        it('should return right alignment for left spread property', () => {
+            expect(getPageSpreadAlignment('left')).toBe('right');
+        });
+
+        it('should return left alignment for right spread property', () => {
+            expect(getPageSpreadAlignment('right')).toBe('left');
+        });
+
+        it('should return center alignment for center spread property', () => {
+            expect(getPageSpreadAlignment('center')).toBe('center');
+        });
+
+        it('should return center alignment for empty or unspecified spread property', () => {
+            expect(getPageSpreadAlignment('')).toBe('center');
+            expect(getPageSpreadAlignment(null)).toBe('center');
+            expect(getPageSpreadAlignment(undefined)).toBe('center');
+        });
+    });
+
     describe('getSpineDirectionAttribute', () => {
         it('should return page-progression-direction="ltr" for LTR', () => {
             expect(getSpineDirectionAttribute(READING_DIRECTIONS.LTR)).toBe(' page-progression-direction="ltr"');
@@ -449,6 +469,122 @@ describe('epub-builder module', () => {
             expect(opf).toContain('<itemref idref="page1" properties="page-spread-left"/>');
             expect(opf).toContain('<itemref idref="page2" properties="page-spread-right"/>');
             expect(opf).toContain('<itemref idref="page3" properties="page-spread-left"/>');
+        });
+    });
+
+    describe('XHTML page alignment and CSS reset', () => {
+        it('should include @page reset and inline-block img styling in generated XHTML pages', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = [
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
+            ];
+
+            await createEpub({
+                images: mockImages,
+                title: 'Reset Test',
+                author: 'Author Reset',
+                jszipLib: MockJSZip
+            });
+
+            const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
+            expect(page0).toContain('@page { margin: 0; }');
+            expect(page0).toContain('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }');
+            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+        });
+
+        it('should align left spread page to right and right spread page to left in RTL landscape', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = [
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
+            ];
+
+            await createEpub({
+                images: mockImages,
+                title: 'RTL Alignment Test',
+                author: 'Author RTL',
+                readingDirection: READING_DIRECTIONS.RTL,
+                isLandscapeSpread: true,
+                isOffsetFirstPage: false,
+                jszipLib: MockJSZip
+            });
+
+            const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
+            const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
+
+            // In RTL without offset: page0 has spreadProp 'right' -> text-align: left;
+            expect(page0).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
+            // page1 has spreadProp 'left' -> text-align: right;
+            expect(page1).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
+        });
+
+        it('should align left spread page to right and right spread page to left in LTR landscape', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = [
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
+            ];
+
+            await createEpub({
+                images: mockImages,
+                title: 'LTR Alignment Test',
+                author: 'Author LTR',
+                readingDirection: READING_DIRECTIONS.LTR,
+                isLandscapeSpread: true,
+                isOffsetFirstPage: false,
+                jszipLib: MockJSZip
+            });
+
+            const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
+            const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
+
+            // In LTR without offset: page0 has spreadProp 'left' -> text-align: right;
+            expect(page0).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
+            // page1 has spreadProp 'right' -> text-align: left;
+            expect(page1).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
+        });
+
+        it('should align unsplit wide spread page to center in landscape mode', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = [
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) }
+            ];
+
+            await createEpub({
+                images: mockImages,
+                title: 'Center Wide Spread Alignment',
+                author: 'Author Center',
+                isOptimizeEnabled: false,
+                isLandscapeSpread: true,
+                jszipLib: MockJSZip
+            });
+
+            const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
+            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+        });
+
+        it('should include @page reset, text-align center, and vertical-align top in custom cover XHTML', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = [
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
+            ];
+            const customCover = createMockBlob({ width: 1000, height: 1500 });
+            customCover.name = 'custom_cover.jpg';
+
+            await createEpub({
+                images: mockImages,
+                title: 'Cover Alignment Test',
+                author: 'Author Cover',
+                coverSource: COVER_SOURCES.CUSTOM,
+                customCoverFile: customCover,
+                isLandscapeSpread: true,
+                jszipLib: MockJSZip
+            });
+
+            const coverPage = filesCreated['OEBPS/Text/cover.xhtml'];
+            expect(coverPage).toContain('@page { margin: 0; }');
+            expect(coverPage).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(coverPage).toContain('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }');
         });
     });
 });

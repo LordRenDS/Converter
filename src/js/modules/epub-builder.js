@@ -14,6 +14,18 @@ export function getSpineDirectionAttribute(direction) {
 }
 
 /**
+ * Returns the CSS text-align property value ('left', 'right', or 'center') for a given page spread property.
+ * Pages with spread 'left' align right (towards seam), pages with spread 'right' align left (towards seam).
+ * @param {string} spreadProp - 'left', 'right', 'center', or ''
+ * @returns {string} 'left', 'right', or 'center'
+ */
+export function getPageSpreadAlignment(spreadProp) {
+    if (spreadProp === 'left') return 'right';
+    if (spreadProp === 'right') return 'left';
+    return 'center';
+}
+
+/**
  * Creates an EPUB 3 Blob from a list of image entries and settings.
  * @param {Object} options
  * @param {Array<import('jszip').JSZipObject>} options.images
@@ -86,6 +98,7 @@ export async function createEpub({
 
     let manifestItems = '';
     const spinePages = [];
+    const pagesToGenerate = [];
     let globalImageCounter = 0;
     let coverId = null;
     let maxWidth = 0;
@@ -114,9 +127,10 @@ export async function createEpub({
   <title>Cover</title>
   <meta name="viewport" content="width=${img.width}, height=${img.height}"/>
   <style type="text/css">
+    @page { margin: 0; }
     body { margin: 0; padding: 0; background-color: #FFFFFF; }
     div.page-container { text-align: center; margin: 0; padding: 0; }
-    img { margin: 0; padding: 0; }
+    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
   </style>
 </head>
 <body>
@@ -205,29 +219,21 @@ export async function createEpub({
             manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"${properties}/>\n`;
 
             const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
-            const xhtml = `<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
-<head>
-  <title>Page ${globalImageCounter}</title>
-  <meta name="viewport" content="width=${procImg.width}, height=${procImg.height}"/>
-  <style type="text/css">
-    body { margin: 0; padding: 0; background-color: #FFFFFF; }
-    div.page-container { text-align: center; margin: 0; padding: 0; }
-    img { margin: 0; padding: 0; }
-  </style>
-</head>
-<body>
-  <div class="page-container">
-    <img width="${procImg.width}" height="${procImg.height}" src="../Images/${imgName}" alt="Page ${globalImageCounter}" />
-  </div>
-</body>
-</html>`;
-            textFolder.file(pageName, xhtml);
-
             const pageId = `page${globalImageCounter}`;
             manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>\n`;
 
+            const spineIndex = spinePages.length;
             spinePages.push({ id: pageId, type: procImg.type });
+
+            pagesToGenerate.push({
+                pageName,
+                spineIndex,
+                title: `Page ${globalImageCounter}`,
+                width: procImg.width,
+                height: procImg.height,
+                imgName,
+                globalImageCounter
+            });
 
             globalImageCounter++;
         }
@@ -245,6 +251,30 @@ export async function createEpub({
         isLandscapeSpread,
         isOffsetFirstPage
     });
+
+    for (const page of pagesToGenerate) {
+        const spreadProp = spreadProps[page.spineIndex] || '';
+        const textAlign = getPageSpreadAlignment(spreadProp);
+        const xhtml = `<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>${page.title}</title>
+  <meta name="viewport" content="width=${page.width}, height=${page.height}"/>
+  <style type="text/css">
+    @page { margin: 0; }
+    body { margin: 0; padding: 0; background-color: #FFFFFF; }
+    div.page-container { text-align: ${textAlign}; margin: 0; padding: 0; }
+    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+    <img width="${page.width}" height="${page.height}" src="../Images/${page.imgName}" alt="Page ${page.globalImageCounter}" />
+  </div>
+</body>
+</html>`;
+        textFolder.file(page.pageName, xhtml);
+    }
 
     let spineItems = '';
     for (let i = 0; i < spinePages.length; i++) {
