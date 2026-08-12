@@ -1,4 +1,4 @@
-import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY } from './constants.js';
+import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY, DEVICE_PRESETS, getDevicePreset } from './constants.js';
 import { isSpread, getSplitOrder, blobToImage, processImage, splitImage } from './image-processor.js';
 import { PAGE_TYPES, calculatePageSpreads, getPageSpreadProperty } from './spread-calculator.js';
 
@@ -25,6 +25,8 @@ export function getSpineDirectionAttribute(direction) {
  * @param {File|Blob|null} [options.customCoverFile=null]
  * @param {string} [options.coverSource='page']
  * @param {number} [options.coverPageNumber=1]
+ * @param {string|Object|null} [options.targetDevice=null]
+ * @param {boolean} [options.isUpscaleEnabled=true]
  * @param {boolean} [options.isKindleFitEnabled=false]
  * @param {boolean} [options.isGrayscaleEnabled=false]
  * @param {number} [options.jpegQuality=0.85]
@@ -44,6 +46,8 @@ export async function createEpub({
     customCoverFile = null,
     coverSource = COVER_SOURCES.PAGE,
     coverPageNumber = 1,
+    targetDevice = null,
+    isUpscaleEnabled = true,
     isKindleFitEnabled = false,
     isGrayscaleEnabled = false,
     jpegQuality = DEFAULT_JPEG_QUALITY,
@@ -55,6 +59,13 @@ export async function createEpub({
     const ZipConstructor = jszipLib || (typeof window !== 'undefined' ? window.JSZip : globalThis.JSZip);
     if (!ZipConstructor) {
         throw new Error('JSZip library is not available');
+    }
+
+    let effectiveDevice = null;
+    if (targetDevice) {
+        effectiveDevice = getDevicePreset(targetDevice);
+    } else if (isKindleFitEnabled) {
+        effectiveDevice = DEVICE_PRESETS.KINDLE_PW12;
     }
 
     const epubZip = new ZipConstructor();
@@ -103,12 +114,15 @@ export async function createEpub({
   <title>Cover</title>
   <meta name="viewport" content="width=${img.width}, height=${img.height}"/>
   <style type="text/css">
-    body { margin: 0; padding: 0; width: ${img.width}px; height: ${img.height}px; overflow: hidden; }
-    img { width: 100%; height: 100%; display: block; margin: 0; padding: 0; object-fit: cover; }
+    body { margin: 0; padding: 0; background-color: #FFFFFF; }
+    div.page-container { text-align: center; margin: 0; padding: 0; }
+    img { margin: 0; padding: 0; }
   </style>
 </head>
 <body>
-  <img src="../Images/${imgName}" alt="Cover" />
+  <div class="page-container">
+    <img width="${img.width}" height="${img.height}" src="../Images/${imgName}" alt="Cover" />
+  </div>
 </body>
 </html>`;
         textFolder.file(coverPageName, xhtml);
@@ -148,8 +162,8 @@ export async function createEpub({
                 const leftImg = await blobToImage(halves.left);
                 const rightImg = await blobToImage(halves.right);
 
-                const leftRes = await processImage(leftImg, halves.left, isKindleFitEnabled, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality);
-                const rightRes = await processImage(rightImg, halves.right, isKindleFitEnabled, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality);
+                const leftRes = await processImage(leftImg, halves.left, effectiveDevice, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality, isUpscaleEnabled);
+                const rightRes = await processImage(rightImg, halves.right, effectiveDevice, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality, isUpscaleEnabled);
 
                 if (order[0] === 'left') {
                     processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, type: PAGE_TYPES.SPREAD_PART_1 });
@@ -162,7 +176,7 @@ export async function createEpub({
         }
 
         if (!isSpreadProcessed) {
-            const res = await processImage(img, blobData, isKindleFitEnabled, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality);
+            const res = await processImage(img, blobData, effectiveDevice, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality, isUpscaleEnabled);
             let finalExt = ext;
             let finalMime = mimeType;
             if (outputFormat === OUTPUT_FORMATS.JPEG) {
@@ -197,12 +211,15 @@ export async function createEpub({
   <title>Page ${globalImageCounter}</title>
   <meta name="viewport" content="width=${procImg.width}, height=${procImg.height}"/>
   <style type="text/css">
-    body { margin: 0; padding: 0; width: ${procImg.width}px; height: ${procImg.height}px; overflow: hidden; }
-    img { width: 100%; height: 100%; display: block; margin: 0; padding: 0; object-fit: cover; }
+    body { margin: 0; padding: 0; background-color: #FFFFFF; }
+    div.page-container { text-align: center; margin: 0; padding: 0; }
+    img { margin: 0; padding: 0; }
   </style>
 </head>
 <body>
-  <img src="../Images/${imgName}" alt="Page ${globalImageCounter}" />
+  <div class="page-container">
+    <img width="${procImg.width}" height="${procImg.height}" src="../Images/${imgName}" alt="Page ${globalImageCounter}" />
+  </div>
 </body>
 </html>`;
             textFolder.file(pageName, xhtml);
@@ -240,6 +257,13 @@ export async function createEpub({
     const spineDirectionAttr = getSpineDirectionAttribute(readingDirection);
     const primaryWritingMode = readingDirection === READING_DIRECTIONS.RTL ? 'horizontal-rl' : 'horizontal-lr';
 
+    let opfResolution;
+    if (effectiveDevice && effectiveDevice.width > 0 && effectiveDevice.height > 0) {
+        opfResolution = `${effectiveDevice.width}x${effectiveDevice.height}`;
+    } else {
+        opfResolution = `${maxWidth}x${maxHeight}`;
+    }
+
     const safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeAuthor = author.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const bookUuid = (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
@@ -259,8 +283,13 @@ export async function createEpub({
     <meta property="rendition:spread">${isLandscapeSpread ? 'landscape' : 'auto'}</meta>
     <meta name="book-type" content="comic"/>
     <meta name="fixed-layout" content="true"/>
+    <meta name="zero-gutter" content="true"/>
+    <meta name="zero-margin" content="true"/>
+    <meta name="ke-border-color" content="#FFFFFF"/>
+    <meta name="ke-border-width" content="0"/>
+    <meta name="orientation-lock" content="none"/>
     <meta name="primary-writing-mode" content="${primaryWritingMode}"/>
-    <meta name="original-resolution" content="${maxWidth}x${maxHeight}"/>
+    <meta name="original-resolution" content="${opfResolution}"/>
   </metadata>
   <manifest>
     ${manifestItems}  </manifest>

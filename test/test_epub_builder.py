@@ -662,5 +662,60 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(data['smallUpscale'], {'width': 1131, 'height': 1696})
         self.assertEqual(data['smallNoUpscale'], {'width': 600, 'height': 900})
 
+    def test_epub_builder_kcc_xhtml_and_opf(self):
+        code = self.base_env + r"""
+        import { DEVICE_PRESETS } from './src/js/modules/constants.js';
+
+        const mockImages = [
+            { name: '001.jpg', async: async () => new globalThis.Blob([], { width: 1200, height: 1600 }) },
+            { name: '002.jpg', async: async () => new globalThis.Blob([], { width: 1200, height: 1600 }) }
+        ];
+
+        let files = {};
+        const mockZip = {
+            file: (name, content) => { files[name] = content; },
+            folder: (fName) => ({
+                file: (name, content) => { files[fName + '/' + name] = content; },
+                folder: (subName) => ({
+                    file: (name, content) => { files[fName + '/' + subName + '/' + name] = content; }
+                })
+            }),
+            generateAsync: async () => new globalThis.Blob(['epub'])
+        };
+
+        await createEpub({
+            images: mockImages,
+            title: 'Test Book',
+            author: 'Test Author',
+            targetDevice: DEVICE_PRESETS.KINDLE_PW12,
+            isUpscaleEnabled: true,
+            jszipLib: function() { return mockZip; }
+        });
+
+        const page0 = files['OEBPS/Text/page_0000.xhtml'];
+        const opf = files['OEBPS/content.opf'];
+
+        console.log(JSON.stringify({
+            hasObjectFit: page0.includes('object-fit'),
+            hasExplicitDimensions: page0.includes('width="') && page0.includes('height="'),
+            hasCenterDiv: page0.includes('text-align: center') || page0.includes('page-container'),
+            originalResolution: opf.match(/name="original-resolution" content="([^"]+)"/)?.[1],
+            hasZeroGutter: opf.includes('name="zero-gutter" content="true"'),
+            hasZeroMargin: opf.includes('name="zero-margin" content="true"'),
+            hasBorderColor: opf.includes('name="ke-border-color" content="#FFFFFF"'),
+            hasOrientationLock: opf.includes('name="orientation-lock" content="none"')
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertFalse(data['hasObjectFit'])
+        self.assertTrue(data['hasExplicitDimensions'])
+        self.assertTrue(data['hasCenterDiv'])
+        self.assertEqual(data['originalResolution'], '1272x1696')
+        self.assertTrue(data['hasZeroGutter'])
+        self.assertTrue(data['hasZeroMargin'])
+        self.assertTrue(data['hasBorderColor'])
+        self.assertTrue(data['hasOrientationLock'])
+
 if __name__ == '__main__':
     unittest.main()
+
