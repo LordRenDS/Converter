@@ -512,10 +512,13 @@ describe('epub-builder module', () => {
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
 
-            // In RTL without offset: page0 has spreadProp 'right' -> text-align: left;
-            expect(page0).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
-            // page1 has spreadProp 'left' -> text-align: right;
-            expect(page1).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
+            // Portrait always center; landscape alignment in media query
+            // In RTL without offset: page0 has spreadProp 'right' -> landscape text-align: left;
+            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page0).toContain('@media (orientation: landscape) { div.page-container { text-align: left; } }');
+            // page1 has spreadProp 'left' -> landscape text-align: right;
+            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page1).toContain('@media (orientation: landscape) { div.page-container { text-align: right; } }');
         });
 
         it('should align left spread page to right and right spread page to left in LTR landscape', async () => {
@@ -538,10 +541,13 @@ describe('epub-builder module', () => {
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
 
-            // In LTR without offset: page0 has spreadProp 'left' -> text-align: right;
-            expect(page0).toContain('div.page-container { text-align: right; margin: 0; padding: 0; }');
-            // page1 has spreadProp 'right' -> text-align: left;
-            expect(page1).toContain('div.page-container { text-align: left; margin: 0; padding: 0; }');
+            // Portrait always center; landscape alignment in media query
+            // In LTR without offset: page0 has spreadProp 'left' -> landscape text-align: right;
+            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page0).toContain('@media (orientation: landscape) { div.page-container { text-align: right; } }');
+            // page1 has spreadProp 'right' -> landscape text-align: left;
+            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page1).toContain('@media (orientation: landscape) { div.page-container { text-align: left; } }');
         });
 
         it('should align unsplit wide spread page to center in landscape mode', async () => {

@@ -254,7 +254,11 @@ export async function createEpub({
 
     for (const page of pagesToGenerate) {
         const spreadProp = spreadProps[page.spineIndex] || '';
-        const textAlign = getPageSpreadAlignment(spreadProp);
+        const landscapeAlign = getPageSpreadAlignment(spreadProp);
+        // In portrait mode always center; landscape-only alignment via media query
+        const landscapeRule = (landscapeAlign !== 'center')
+            ? `\n    @media (orientation: landscape) { div.page-container { text-align: ${landscapeAlign}; } }`
+            : '';
         const xhtml = `<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
@@ -263,8 +267,8 @@ export async function createEpub({
   <style type="text/css">
     @page { margin: 0; }
     body { margin: 0; padding: 0; background-color: #FFFFFF; }
-    div.page-container { text-align: ${textAlign}; margin: 0; padding: 0; }
-    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
+    div.page-container { text-align: center; margin: 0; padding: 0; }
+    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }${landscapeRule}
   </style>
 </head>
 <body>
