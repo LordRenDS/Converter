@@ -479,20 +479,11 @@ if (typeof document !== 'undefined') {
 
                     let spineProps = '';
                     if (isLandscapeSpread) {
-                        let isLTR = readingDirection === 'ltr';
-                        let isEven = (spineIndex % 2 === 0);
-                        if (isOffsetFirstPage) {
-                            isEven = !isEven;
-                        }
-                        if (isLTR) {
-                            spineProps = isEven ? ' properties="page-spread-right"' : ' properties="page-spread-left"';
-                        } else {
-                            spineProps = isEven ? ' properties="page-spread-left"' : ' properties="page-spread-right"';
-                        }
+                        spineProps = ` properties="page-spread-${expectedNextSide}"`;
+                        expectedNextSide = (expectedNextSide === startSide) ? endSide : startSide;
                     }
                     spineItems += `<itemref idref="${pageId}"${spineProps}/>
 `;
-                    spineIndex++;
 
                     globalImageCounter++;
                 }
