@@ -1,11 +1,9 @@
-import { setupBrowserMocks } from './mocks/browser-mocks.js';
+import { describe, it, expect } from '@jest/globals';
 import { extractImagesFromCbz } from '../src/js/modules/cbz-reader.js';
-
-setupBrowserMocks();
 
 describe('cbz-reader module', () => {
     it('should throw an error if JSZip is not available', async () => {
-        const dummyFile = new Blob([''], { type: 'application/zip' });
+        const dummyFile = new globalThis.Blob([''], { type: 'application/zip' });
         await expect(extractImagesFromCbz(dummyFile, null)).rejects.toThrow('JSZip library is not available');
     });
 
@@ -28,7 +26,7 @@ describe('cbz-reader module', () => {
             }
         };
 
-        const dummyFile = new Blob([''], { type: 'application/zip' });
+        const dummyFile = new globalThis.Blob([''], { type: 'application/zip' });
         const result = await extractImagesFromCbz(dummyFile, MockJSZip);
 
         expect(result).toHaveLength(3);

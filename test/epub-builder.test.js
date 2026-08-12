@@ -1,8 +1,6 @@
-import { setupBrowserMocks } from './mocks/browser-mocks.js';
+import { describe, it, expect, jest } from '@jest/globals';
 import { getSpineDirectionAttribute, createEpub } from '../src/js/modules/epub-builder.js';
 import { READING_DIRECTIONS } from '../src/js/modules/constants.js';
-
-setupBrowserMocks();
 
 describe('epub-builder module', () => {
     describe('getSpineDirectionAttribute', () => {

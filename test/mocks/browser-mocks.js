@@ -1,3 +1,5 @@
+import { jest } from '@jest/globals';
+
 /**
  * Reusable browser environment mocks for Jest
  */
@@ -44,12 +46,14 @@ export function setupBrowserMocks() {
         }
     };
 
-    globalThis.Blob = class Blob {
-        constructor(content = [], options = {}) {
-            this.content = content;
-            this.type = options?.type || '';
-        }
-    };
+    if (typeof globalThis.Blob === 'undefined') {
+        globalThis.Blob = class Blob {
+            constructor(content = [], options = {}) {
+                this.content = content;
+                this.type = options?.type || '';
+            }
+        };
+    }
 
     globalThis.document = {
         createElement: (tag) => {
@@ -65,3 +69,6 @@ export function setupBrowserMocks() {
         getElementById: jest.fn()
     };
 }
+
+// Auto-run when included via setupFilesAfterEnv
+setupBrowserMocks();
