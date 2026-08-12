@@ -477,22 +477,28 @@ if (typeof document !== 'undefined') {
                     manifestItems += `<item id="${pageId}" href="Text/${pageName}" media-type="application/xhtml+xml"/>
 `;
 
-                    let spineProps = '';
+                                        let spineProps = '';
                     if (isLandscapeSpread) {
-                        let isLTR = readingDirection === 'ltr';
-                        let isEven = (spineIndex % 2 === 0);
-                        if (isOffsetFirstPage) {
-                            isEven = !isEven;
-                        }
-                        if (isLTR) {
-                            spineProps = isEven ? ' properties="page-spread-right"' : ' properties="page-spread-left"';
+                        if (procImg.pageSpread === 'center') {
+                            spineProps = ' properties="page-spread-center"';
+                            // Uncut spread takes full screen, reset expected next side to start of a new spread
+                            expectedNextSide = startSide;
+                        } else if (procImg.pageSpread !== undefined) {
+                            // This is a cut half, strictly use its assigned side
+                            spineProps = ` properties="page-spread-${procImg.pageSpread}"`;
+                            // Reset queue based on which half it is. If it's the end half, the next normal page should be on startSide.
+                            if (procImg.pageSpread === endSide) {
+                                expectedNextSide = startSide;
+                            } else {
+                                expectedNextSide = endSide;
+                            }
                         } else {
-                            spineProps = isEven ? ' properties="page-spread-left"' : ' properties="page-spread-right"';
+                            // Normal page
+                            spineProps = ` properties="page-spread-${expectedNextSide}"`;
+                            expectedNextSide = (expectedNextSide === startSide) ? endSide : startSide;
                         }
                     }
-                    spineItems += `<itemref idref="${pageId}"${spineProps}/>
-`;
-                    spineIndex++;
+                    spineItems += `<itemref idref="${pageId}"${spineProps}/>\n`;
 
                     globalImageCounter++;
                 }
