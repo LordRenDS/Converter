@@ -607,5 +607,27 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', opf)
         self.assertIn('<itemref idref="page3" properties="page-spread-left"/>', opf)
 
+    def test_device_presets_constants(self):
+        code = self.base_env + r"""
+        import { DEVICE_PRESETS, getDevicePreset } from './src/js/modules/constants.js';
+
+        const pw12 = getDevicePreset('kindle_pw12');
+        const pw11 = getDevicePreset('kindle_pw11');
+        const oasis = getDevicePreset('kindle_oasis');
+        const original = getDevicePreset('original');
+
+        console.log(JSON.stringify({
+            pw12: { width: pw12.width, height: pw12.height },
+            pw11: { width: pw11.width, height: pw11.height },
+            oasis: { width: oasis.width, height: oasis.height },
+            original: { width: original.width, height: original.height }
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertEqual(data['pw12'], {'width': 1272, 'height': 1696})
+        self.assertEqual(data['pw11'], {'width': 1236, 'height': 1648})
+        self.assertEqual(data['oasis'], {'width': 1264, 'height': 1680})
+        self.assertEqual(data['original'], {'width': 0, 'height': 0})
+
 if __name__ == '__main__':
     unittest.main()
