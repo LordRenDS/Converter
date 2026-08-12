@@ -332,7 +332,9 @@ if (typeof document !== 'undefined') {
             let manifestItems = "";
             let spineItems = "";
             let globalImageCounter = 0;
-            let spineIndex = 0;
+            let startSide = readingDirection === 'rtl' ? 'right' : 'left';
+            let endSide = readingDirection === 'rtl' ? 'left' : 'right';
+            let expectedNextSide = isOffsetFirstPage ? startSide : endSide;
             let coverId = null;
             let maxWidth = 0;
             let maxHeight = 0;
@@ -373,15 +375,10 @@ if (typeof document !== 'undefined') {
                 manifestItems += `<item id="${coverPageId}" href="Text/${coverPageName}" media-type="application/xhtml+xml"/>\n`;
                                 let coverSpineProps = '';
                 if (isLandscapeSpread) {
-                    let isLTR = readingDirection === 'ltr';
-                    if (isOffsetFirstPage) {
-                        coverSpineProps = isLTR ? ' properties="page-spread-right"' : ' properties="page-spread-left"';
-                    } else {
-                        coverSpineProps = isLTR ? ' properties="page-spread-left"' : ' properties="page-spread-right"';
-                    }
+                    coverSpineProps = ` properties="page-spread-${expectedNextSide}"`;
+                    expectedNextSide = (expectedNextSide === startSide) ? endSide : startSide;
                 }
                 spineItems += `<itemref idref="${coverPageId}"${coverSpineProps}/>\n`;
-                spineIndex++;
             }
 
             for (let i = 0; i < images.length; i++) {
@@ -416,11 +413,11 @@ if (typeof document !== 'undefined') {
                         const rightRes = await ConverterLogic.processImage(rightImg, halves.right, isKindleFitEnabled, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality);
 
                         if (order[0] === 'left') {
-                            processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height });
-                            processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height });
+                            processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, pageSpread: readingDirection === 'rtl' ? 'right' : 'left' });
+                            processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, pageSpread: readingDirection === 'rtl' ? 'left' : 'right' });
                         } else {
-                            processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height });
-                            processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height });
+                            processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, pageSpread: readingDirection === 'rtl' ? 'right' : 'left' });
+                            processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, pageSpread: readingDirection === 'rtl' ? 'left' : 'right' });
                         }
                     }
                 }
@@ -433,7 +430,12 @@ if (typeof document !== 'undefined') {
                         finalExt = 'jpg';
                         finalMime = 'jpeg';
                     }
-                    processedImages.push({ blob: res.blob, ext: finalExt, mimeType: finalMime, suffix: '', width: res.width, height: res.height });
+                    let pageSpreadProp = undefined;
+                    // If it's a spread but we are not cutting it, force it to 'center'
+                    if (ConverterLogic.isSpread(img.width, img.height)) {
+                        pageSpreadProp = 'center';
+                    }
+                    processedImages.push({ blob: res.blob, ext: finalExt, mimeType: finalMime, suffix: '', width: res.width, height: res.height, pageSpread: pageSpreadProp });
                 }
 
                 for (const procImg of processedImages) {
