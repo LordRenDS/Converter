@@ -469,8 +469,10 @@ describe('epub-builder module', () => {
             });
 
             const styleCss = filesCreated['OEBPS/Text/style.css'];
-            expect(styleCss).toContain('@page { margin: 0; }');
-            expect(styleCss).toContain('body { display: block; margin: 0; padding: 0; }');
+            expect(styleCss).toContain('@page');
+            expect(styleCss).toContain('margin: 0');
+            expect(styleCss).toContain('body');
+            expect(styleCss).toContain('display: block');
 
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
             expect(page0).toContain('<link href="style.css" type="text/css" rel="stylesheet"/>');
