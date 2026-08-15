@@ -140,19 +140,36 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
         const createMockZip = () => {
             const files = {};
+            const fileOptions = {};
+            let generateOptions = null;
             const zip = {
-                file: (path, content) => { files[path] = content; return zip; },
+                file: (path, content, opts) => {
+                    files[path] = content;
+                    fileOptions[path] = opts || null;
+                    return zip;
+                },
                 folder: (name) => {
                     return {
-                        file: (subPath, content) => { files[`${name}/${subPath}`] = content; return zip; },
+                        file: (subPath, content, opts) => {
+                            files[`${name}/${subPath}`] = content;
+                            fileOptions[`${name}/${subPath}`] = opts || null;
+                            return zip;
+                        },
                         folder: (nestedName) => ({
-                            file: (nestedPath, content) => { files[`${name}/${nestedName}/${nestedPath}`] = content; return zip; }
+                            file: (nestedPath, content, opts) => {
+                                files[`${name}/${nestedName}/${nestedPath}`] = content;
+                                fileOptions[`${name}/${nestedName}/${nestedPath}`] = opts || null;
+                                return zip;
+                            }
                         })
                     };
                 },
-                async generateAsync(options) { return new globalThis.Blob(['mock-epub'], { type: options?.mimeType || 'application/epub+zip' }); }
+                async generateAsync(options) {
+                    generateOptions = options;
+                    return new globalThis.Blob(['mock-epub'], { type: options?.mimeType || 'application/epub+zip' });
+                }
             };
-            return { zip, files };
+            return { zip, files, fileOptions, getGenerateOptions: () => generateOptions };
         };
         """
 
@@ -189,7 +206,8 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
             return {
                 page0: files['OEBPS/Text/page_0000.xhtml'],
-                page1: files['OEBPS/Text/page_0001.xhtml']
+                page1: files['OEBPS/Text/page_0001.xhtml'],
+                css: files['OEBPS/Text/style.css']
             };
         }
         run().then(res => console.log(JSON.stringify(res)));
@@ -197,13 +215,19 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         res = run_js_eval(js_code)
         page0 = res['page0']
         page1 = res['page1']
+        css = res['css']
 
-        self.assertIn('@page { margin: 0; }', page0)
-        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
-        # Always text-align: center — e-reader handles positioning via spine page-spread-* props
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page1)
-        # No JS block
+        self.assertIn('@page {\n  margin: 0;\n}', css)
+        self.assertIn('body {\n  display: block;\n  margin: 0;\n  padding: 0;\n}', css)
+
+        self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', page0)
+        self.assertIn('<div style="text-align:center;">', page0)
+        self.assertIn('<div style="display:none;">.</div>', page0)
+        self.assertIn('<img width="1000" height="1500" src="../Images/image_0000.jpg"', page0)
+        self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', page1)
+        self.assertIn('<div style="text-align:center;">', page1)
+        self.assertIn('<div style="display:none;">.</div>', page1)
+        self.assertIn('<img width="1000" height="1500" src="../Images/image_0001.jpg"', page1)
         self.assertNotIn('<script', page0)
         self.assertNotIn('<script', page1)
 
@@ -237,12 +261,14 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         page0 = res['page0']
         page1 = res['page1']
 
-        self.assertIn('@page { margin: 0; }', page0)
-        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page0)
-        # Always text-align: center — e-reader handles positioning via spine page-spread-* props
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page0)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page1)
-        # No JS block
+        self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', page0)
+        self.assertIn('<div style="text-align:center;">', page0)
+        self.assertIn('<div style="display:none;">.</div>', page0)
+        self.assertIn('<img width="1000" height="1500" src="../Images/image_0000.jpg"', page0)
+        self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', page1)
+        self.assertIn('<div style="text-align:center;">', page1)
+        self.assertIn('<div style="display:none;">.</div>', page1)
+        self.assertIn('<img width="1000" height="1500" src="../Images/image_0001.jpg"', page1)
         self.assertNotIn('<script', page0)
         self.assertNotIn('<script', page1)
 
@@ -276,9 +302,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         res = run_js_eval(js_code)
         for page_key in ['page0', 'page1', 'page2']:
             page = res[page_key]
-            self.assertIn('@page { margin: 0; }', page)
-            self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', page)
-            self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', page)
+            self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', page)
+            self.assertIn('<div style="text-align:center;">', page)
+            self.assertIn('<div style="display:none;">.</div>', page)
+            self.assertIn('<img width="1000" height="1500"', page)
 
     def test_cover_page_xhtml_reset(self):
         js_code = self.base_env + """
@@ -327,14 +354,16 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         regularCover = res['regularCoverPage']
 
         # Verify custom cover reset and alignment
-        self.assertIn('@page { margin: 0; }', customCover)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', customCover)
-        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', customCover)
+        self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', customCover)
+        self.assertIn('<div style="text-align:center;">', customCover)
+        self.assertIn('<div style="display:none;">.</div>', customCover)
+        self.assertIn('<img width="1000" height="1500" src="../Images/cover.jpg"', customCover)
 
         # Verify regular cover page reset and alignment
-        self.assertIn('@page { margin: 0; }', regularCover)
-        self.assertIn('div.page-container { text-align: center; margin: 0; padding: 0; }', regularCover)
-        self.assertIn('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }', regularCover)
+        self.assertIn('<link href="style.css" type="text/css" rel="stylesheet"/>', regularCover)
+        self.assertIn('<div style="text-align:center;">', regularCover)
+        self.assertIn('<div style="display:none;">.</div>', regularCover)
+        self.assertIn('<img width="1000" height="1500" src="../Images/image_0000.jpg"', regularCover)
 
     def test_create_epub_without_jszip_throws(self):
         js_code = self.base_env + """
@@ -380,11 +409,12 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         self.assertIn('<dc:title>RTL Single Pages Comic</dc:title>', opf)
         self.assertIn('page-progression-direction="rtl"', opf)
+        self.assertIn('toc="ncx"', opf)
         self.assertIn('<meta property="rendition:spread">landscape</meta>', opf)
-        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-left"/>', opf)
 
     def test_scenario_1_ltr_landscape_spread_single_pages(self):
         js_code = self.base_env + """
@@ -414,11 +444,12 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         self.assertIn('<dc:title>LTR Single Pages Comic</dc:title>', opf)
         self.assertIn('page-progression-direction="ltr"', opf)
+        self.assertIn('toc="ncx"', opf)
         self.assertIn('<meta property="rendition:spread">landscape</meta>', opf)
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-right"/>', opf)
 
     def test_scenario_1_rtl_split_spread_with_backward_pass(self):
         js_code = self.base_env + """
@@ -449,10 +480,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         # [N, S1, S2, N] in RTL:
         # S1=right, S2=left. Preceding N (page0) adjusted to left by backward pass. Next N (page3) is right.
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-right"/>', opf)
 
     def test_scenario_1_ltr_split_spread_with_backward_pass(self):
         js_code = self.base_env + """
@@ -483,10 +514,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         # [N, S1, S2, N] in LTR:
         # S1=left, S2=right. Preceding N (page0) adjusted to right by backward pass. Next N (page3) is left.
-        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-left"/>', opf)
 
     def test_scenario_1_rtl_three_single_pages_before_spread(self):
         js_code = self.base_env + """
@@ -517,11 +548,11 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         # [N, N, N, S1, S2] in RTL:
         # S1=right, S2=left. Backward pass: page2=left, page1=right, page0=left.
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page4" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page4" linear="yes" properties="page-spread-left"/>', opf)
 
     # Scenario 2: isLandscapeSpread: true, isOptimizeEnabled: false (wide pages not split -> page-spread-center)
     def test_scenario_2_unsplit_wide_spread_center_rtl(self):
@@ -551,9 +582,9 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         """
         opf = run_js_eval(js_code)
         # [N, R, N] in RTL: page0=left, page1=center, page2=right
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-center"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-center"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-right"/>', opf)
 
     def test_scenario_2_unsplit_wide_spread_center_ltr(self):
         js_code = self.base_env + """
@@ -582,9 +613,9 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         """
         opf = run_js_eval(js_code)
         # [N, R, N] in LTR: page0=right, page1=center, page2=left
-        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-center"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-center"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-left"/>', opf)
 
     # Scenario 3: isLandscapeSpread: true with custom cover file
     def test_scenario_3_custom_cover_rtl(self):
@@ -620,9 +651,9 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         # Custom cover is registered as first page ('cover-page'), followed by page0, page1
         # For RTL without offset: cover-page=right, page0=left, page1=right
-        self.assertIn('<itemref idref="cover-page" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="cover-page" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', opf)
 
     def test_scenario_3_custom_cover_ltr(self):
         js_code = self.base_env + """
@@ -657,9 +688,9 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         opf = run_js_eval(js_code)
         # Custom cover is registered as first page ('cover-page'), followed by page0, page1
         # For LTR without offset: cover-page=left, page0=right, page1=left
-        self.assertIn('<itemref idref="cover-page" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="cover-page" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-left"/>', opf)
 
     # Scenario 4: isLandscapeSpread: false -> NO properties="page-spread-..." on itemref elements
     def test_scenario_4_landscape_spread_disabled_rtl(self):
@@ -691,9 +722,9 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertNotIn('page-spread-right', opf)
         self.assertNotIn('page-spread-left', opf)
         self.assertNotIn('page-spread-center', opf)
-        self.assertIn('<itemref idref="page0"/>', opf)
-        self.assertIn('<itemref idref="page1"/>', opf)
-        self.assertIn('<itemref idref="page2"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes"/>', opf)
 
     def test_scenario_4_landscape_spread_disabled_ltr(self):
         js_code = self.base_env + """
@@ -722,8 +753,8 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertNotIn('page-spread-right', opf)
         self.assertNotIn('page-spread-left', opf)
         self.assertNotIn('page-spread-center', opf)
-        self.assertIn('<itemref idref="page0"/>', opf)
-        self.assertIn('<itemref idref="page1"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes"/>', opf)
 
     # Scenario 5: isLandscapeSpread: true, isOffsetFirstPage: true
     def test_scenario_5_offset_first_page_rtl(self):
@@ -753,10 +784,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         """
         opf = run_js_eval(js_code)
         # RTL with offset: page0=left, page1=right, page2=left, page3=right
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-right"/>', opf)
 
     def test_scenario_5_offset_first_page_ltr(self):
         js_code = self.base_env + """
@@ -785,10 +816,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         """
         opf = run_js_eval(js_code)
         # LTR with offset: page0=right, page1=left, page2=right, page3=left
-        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', opf)
-        self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', opf)
-        self.assertIn('<itemref idref="page3" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-left"/>', opf)
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-right"/>', opf)
+        self.assertIn('<itemref idref="page3" linear="yes" properties="page-spread-left"/>', opf)
 
     def test_device_presets_constants(self):
         code = self.base_env + r"""
@@ -890,15 +921,20 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         ];
 
         let files = {};
+        let fileOpts = {};
+        let genOpts = null;
         const mockZip = {
-            file: (name, content) => { files[name] = content; },
+            file: (name, content, opts) => { files[name] = content; fileOpts[name] = opts; return mockZip; },
             folder: (fName) => ({
-                file: (name, content) => { files[fName + '/' + name] = content; },
+                file: (name, content, opts) => { files[fName + '/' + name] = content; fileOpts[fName + '/' + name] = opts; return mockZip; },
                 folder: (subName) => ({
-                    file: (name, content) => { files[fName + '/' + subName + '/' + name] = content; }
+                    file: (name, content, opts) => { files[fName + '/' + subName + '/' + name] = content; fileOpts[fName + '/' + subName + '/' + name] = opts; return mockZip; }
                 })
             }),
-            generateAsync: async () => new globalThis.Blob(['epub'])
+            generateAsync: async (options) => {
+                genOpts = options;
+                return new globalThis.Blob(['epub']);
+            }
         };
 
         await createEpub({
@@ -912,27 +948,160 @@ class TestEpubBuilderIntegration(unittest.TestCase):
 
         const page0 = files['OEBPS/Text/page_0000.xhtml'];
         const opf = files['OEBPS/content.opf'];
+        const ncx = files['OEBPS/toc.ncx'];
+        const nav = files['OEBPS/nav.xhtml'];
+        const css = files['OEBPS/Text/style.css'];
 
         console.log(JSON.stringify({
             hasObjectFit: page0.includes('object-fit'),
             hasExplicitDimensions: page0.includes('width="') && page0.includes('height="'),
-            hasCenterDiv: page0.includes('text-align: center') || page0.includes('page-container'),
+            hasCenterDiv: page0.includes('text-align:center') || page0.includes('text-align: center'),
+            hasHiddenDiv: page0.includes('<div style="display:none;">.</div>'),
+            hasCssLink: page0.includes('<link href="style.css" type="text/css" rel="stylesheet"/>'),
             originalResolution: opf.match(/name="original-resolution" content="([^"]+)"/)?.[1],
             hasZeroGutter: opf.includes('name="zero-gutter" content="true"'),
             hasZeroMargin: opf.includes('name="zero-margin" content="true"'),
             hasBorderColor: opf.includes('name="ke-border-color" content="#FFFFFF"'),
-            hasOrientationLock: opf.includes('name="orientation-lock" content="none"')
+            hasOrientationLock: opf.includes('name="orientation-lock" content="none"'),
+            hasRegionMag: opf.includes('name="region-mag" content="false"'),
+            hasDctermsModified: /<meta property="dcterms:modified">\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z<\/meta>/.test(opf),
+            hasNcxManifest: opf.includes('<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'),
+            hasNavManifest: opf.includes('<item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>'),
+            hasCssManifest: opf.includes('<item id="css" href="Text/style.css" media-type="text/css"/>'),
+            hasSpineToc: opf.includes('toc="ncx"'),
+            hasSpineLinear: opf.includes('linear="yes"'),
+            hasNcxFile: !!ncx,
+            hasNavFile: !!nav,
+            hasCssFile: !!css,
+            mimetypeCompression: fileOpts['mimetype']?.compression,
+            generatorCompression: genOpts?.compression
         }));
         """
         data = run_js_eval(code)
         self.assertFalse(data['hasObjectFit'])
         self.assertTrue(data['hasExplicitDimensions'])
         self.assertTrue(data['hasCenterDiv'])
+        self.assertTrue(data['hasHiddenDiv'])
+        self.assertTrue(data['hasCssLink'])
         self.assertEqual(data['originalResolution'], '1272x1696')
         self.assertTrue(data['hasZeroGutter'])
         self.assertTrue(data['hasZeroMargin'])
         self.assertTrue(data['hasBorderColor'])
         self.assertTrue(data['hasOrientationLock'])
+        self.assertTrue(data['hasRegionMag'])
+        self.assertTrue(data['hasDctermsModified'])
+        self.assertTrue(data['hasNcxManifest'])
+        self.assertTrue(data['hasNavManifest'])
+        self.assertTrue(data['hasCssManifest'])
+        self.assertTrue(data['hasSpineToc'])
+        self.assertTrue(data['hasSpineLinear'])
+        self.assertTrue(data['hasNcxFile'])
+        self.assertTrue(data['hasNavFile'])
+        self.assertTrue(data['hasCssFile'])
+        self.assertEqual(data['mimetypeCompression'], 'STORE')
+        self.assertEqual(data['generatorCompression'], 'STORE')
+
+    def test_epub_container_toc_ncx_structure(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockImages = [
+            { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
+            { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+        ];
+
+        await createEpub({
+            images: mockImages,
+            title: 'TOC NCX Test & Adventure',
+            author: 'Author NCX',
+            readingDirection: READING_DIRECTIONS.LTR,
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        const ncx = files['OEBPS/toc.ncx'];
+        console.log(JSON.stringify({ ncx }));
+        """
+        data = run_js_eval(code)
+        ncx = data['ncx']
+        self.assertIsNotNone(ncx)
+        self.assertIn('<?xml version="1.0" encoding="UTF-8"?>', ncx)
+        self.assertIn('<ncx version="2005-1" xml:lang="en" xmlns="http://www.daisy.org/z3986/2005/ncx/">', ncx)
+        self.assertIn('<meta name="dtb:uid" content="urn:uuid:', ncx)
+        self.assertIn('<meta name="dtb:depth" content="1"/>', ncx)
+        self.assertIn('<meta name="dtb:totalPageCount" content="0"/>', ncx)
+        self.assertIn('<meta name="dtb:maxPageNumber" content="0"/>', ncx)
+        self.assertIn('<meta name="generated" content="true"/>', ncx)
+        self.assertIn('<docTitle><text>TOC NCX Test &amp; Adventure</text></docTitle>', ncx)
+        self.assertIn('<navPoint id="page0">', ncx)
+        self.assertIn('<navLabel><text>Page 0</text></navLabel>', ncx)
+        self.assertIn('<content src="Text/page_0000.xhtml"/>', ncx)
+        self.assertIn('<navPoint id="page1">', ncx)
+        self.assertIn('<navLabel><text>Page 1</text></navLabel>', ncx)
+        self.assertIn('<content src="Text/page_0001.xhtml"/>', ncx)
+
+    def test_epub_container_nav_xhtml_structure(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockImages = [
+            { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
+            { name: 'p2.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+        ];
+
+        await createEpub({
+            images: mockImages,
+            title: 'NAV XHTML Test',
+            author: 'Author NAV',
+            readingDirection: READING_DIRECTIONS.LTR,
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        const nav = files['OEBPS/nav.xhtml'];
+        console.log(JSON.stringify({ nav }));
+        """
+        data = run_js_eval(code)
+        nav = data['nav']
+        self.assertIsNotNone(nav)
+        self.assertIn('<?xml version="1.0" encoding="utf-8"?>', nav)
+        self.assertIn('<!DOCTYPE html>', nav)
+        self.assertIn('<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">', nav)
+        self.assertIn('<title>NAV XHTML Test</title>', nav)
+        self.assertIn('<nav epub:type="toc" id="toc">', nav)
+        self.assertIn('<li><a href="Text/page_0000.xhtml">Page 0</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0001.xhtml">Page 1</a></li>', nav)
+        self.assertIn('<nav epub:type="page-list">', nav)
+        self.assertIn('<li><a href="Text/page_0000.xhtml">Page 0</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0001.xhtml">Page 1</a></li>', nav)
+
+    def test_epub_container_custom_cover_in_ncx_and_nav(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockImages = [
+            { name: 'p1.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+        ];
+        const customCover = {
+            name: 'my_cover.jpg',
+            width: 1000,
+            height: 1500
+        };
+
+        await createEpub({
+            images: mockImages,
+            title: 'Cover Nav Test',
+            coverSource: COVER_SOURCES.CUSTOM,
+            customCoverFile: customCover,
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        const ncx = files['OEBPS/toc.ncx'];
+        const nav = files['OEBPS/nav.xhtml'];
+        console.log(JSON.stringify({ ncx, nav }));
+        """
+        data = run_js_eval(code)
+        ncx = data['ncx']
+        nav = data['nav']
+        self.assertIn('<navPoint id="cover-page">', ncx)
+        self.assertIn('<navLabel><text>Cover</text></navLabel>', ncx)
+        self.assertIn('<content src="Text/cover.xhtml"/>', ncx)
+        self.assertIn('<li><a href="Text/cover.xhtml">Cover</a></li>', nav)
 
     def test_index_html_device_options(self):
         index_path = REPO_ROOT / 'index.html'
@@ -1168,14 +1337,14 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         # LTR: left first, then right
         self.assertIn('OEBPS/Images/image_0000_left.jpg', data['ltrFiles'])
         self.assertIn('OEBPS/Images/image_0001_right.jpg', data['ltrFiles'])
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', data['ltrOpf'])
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', data['ltrOpf'])
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', data['ltrOpf'])
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', data['ltrOpf'])
 
         # RTL: right first, then left
         self.assertIn('OEBPS/Images/image_0000_right.jpg', data['rtlFiles'])
         self.assertIn('OEBPS/Images/image_0001_left.jpg', data['rtlFiles'])
-        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', data['rtlOpf'])
-        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', data['rtlOpf'])
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-right"/>', data['rtlOpf'])
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-left"/>', data['rtlOpf'])
 
     def test_epub_spread_mode_rotate(self):
         code = self.base_env + r"""
@@ -1202,7 +1371,7 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         data = run_js_eval(code)
         self.assertIn('OEBPS/Images/image_0000_spread.jpg', data['files'])
         self.assertIn('id="img0" href="Images/image_0000_spread.jpg" media-type="image/jpeg"', data['opf'])
-        self.assertIn('<itemref idref="page0" properties="page-spread-center"/>', data['opf'])
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-center"/>', data['opf'])
         # Rotated 90 deg -> width 1000, height 2000
         self.assertIn('width="1000"', data['page0'])
         self.assertIn('height="2000"', data['page0'])
@@ -1247,17 +1416,17 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertIn('OEBPS/Images/image_0000_spread.jpg', data['beforeFiles'])
         self.assertIn('OEBPS/Images/image_0001_left.jpg', data['beforeFiles'])
         self.assertIn('OEBPS/Images/image_0002_right.jpg', data['beforeFiles'])
-        self.assertIn('<itemref idref="page0" properties="page-spread-center"/>', data['beforeOpf'])
-        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', data['beforeOpf'])
-        self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', data['beforeOpf'])
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-center"/>', data['beforeOpf'])
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-left"/>', data['beforeOpf'])
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-right"/>', data['beforeOpf'])
 
         # AFTER: [S1, S2, R] -> image_0000_left, image_0001_right, image_0002_spread
         self.assertIn('OEBPS/Images/image_0000_left.jpg', data['afterFiles'])
         self.assertIn('OEBPS/Images/image_0001_right.jpg', data['afterFiles'])
         self.assertIn('OEBPS/Images/image_0002_spread.jpg', data['afterFiles'])
-        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', data['afterOpf'])
-        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', data['afterOpf'])
-        self.assertIn('<itemref idref="page2" properties="page-spread-center"/>', data['afterOpf'])
+        self.assertIn('<itemref idref="page0" linear="yes" properties="page-spread-left"/>', data['afterOpf'])
+        self.assertIn('<itemref idref="page1" linear="yes" properties="page-spread-right"/>', data['afterOpf'])
+        self.assertIn('<itemref idref="page2" linear="yes" properties="page-spread-center"/>', data['afterOpf'])
 
     def test_epub_spread_mode_no_rotate(self):
         code = self.base_env + r"""

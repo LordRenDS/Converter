@@ -14,6 +14,74 @@ export function getSpineDirectionAttribute(direction) {
 }
 
 /**
+ * Builds the NCX Table of Contents (EPUB 2 / Kindle).
+ * @param {Object} options
+ * @param {string} options.title
+ * @param {string} options.bookUuid
+ * @param {Array<{id: string, pageName: string, title?: string}>} options.pages
+ * @returns {string}
+ */
+export function buildNcx({ title = 'Untitled', bookUuid = '12345-67890', pages = [] }) {
+    const safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const navPoints = pages.map((page, index) => {
+        const safePageTitle = (page.title || `Page ${index}`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const navId = page.id || `navPoint-${index + 1}`;
+        return `    <navPoint id="${navId}">\n      <navLabel><text>${safePageTitle}</text></navLabel>\n      <content src="Text/${page.pageName}"/>\n    </navPoint>`;
+    }).join('\n');
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<ncx version="2005-1" xml:lang="en" xmlns="http://www.daisy.org/z3986/2005/ncx/">
+  <head>
+    <meta name="dtb:uid" content="urn:uuid:${bookUuid}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="0"/>
+    <meta name="dtb:maxPageNumber" content="0"/>
+    <meta name="generated" content="true"/>
+  </head>
+  <docTitle><text>${safeTitle}</text></docTitle>
+  <navMap>
+${navPoints}
+  </navMap>
+</ncx>`;
+}
+
+/**
+ * Builds the EPUB 3 Navigation Document (nav.xhtml).
+ * @param {Object} options
+ * @param {string} options.title
+ * @param {Array<{pageName: string, title?: string}>} options.pages
+ * @returns {string}
+ */
+export function buildNav({ title = 'Untitled', pages = [] }) {
+    const safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const listItems = pages.map((page, index) => {
+        const safePageTitle = (page.title || `Page ${index}`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `      <li><a href="Text/${page.pageName}">${safePageTitle}</a></li>`;
+    }).join('\n');
+
+    return `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+  <title>${safeTitle}</title>
+  <meta charset="utf-8"/>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <ol>
+${listItems}
+    </ol>
+  </nav>
+  <nav epub:type="page-list">
+    <ol>
+${listItems}
+    </ol>
+  </nav>
+</body>
+</html>`;
+}
+
+/**
  * Creates an EPUB 3 Blob from a list of image entries and settings.
  * @param {Object} options
  * @param {Array<import('jszip').JSZipObject>} options.images
@@ -82,7 +150,7 @@ export async function createEpub({
 
     const epubZip = new ZipConstructor();
 
-    epubZip.file('mimetype', 'application/epub+zip');
+    epubZip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
 
     const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
@@ -96,7 +164,18 @@ export async function createEpub({
     const imagesFolder = oebps.folder('Images');
     const textFolder = oebps.folder('Text');
 
-    let manifestItems = '';
+    const styleCss = `@page {
+  margin: 0;
+}
+body {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+`;
+    textFolder.file('style.css', styleCss);
+
+    let manifestItems = `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n<item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>\n<item id="css" href="Text/style.css" media-type="text/css"/>\n`;
     const spinePages = [];
     const pagesToGenerate = [];
     let globalImageCounter = 0;
@@ -122,20 +201,17 @@ export async function createEpub({
         if (img.height > maxHeight) maxHeight = img.height;
 
         const xhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <title>Cover</title>
+  <link href="style.css" type="text/css" rel="stylesheet"/>
   <meta name="viewport" content="width=${img.width}, height=${img.height}"/>
-  <style type="text/css">
-    @page { margin: 0; }
-    body { margin: 0; padding: 0; background-color: #FFFFFF; }
-    div.page-container { text-align: center; margin: 0; padding: 0; }
-    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
-  </style>
 </head>
 <body>
-  <div class="page-container">
-    <img width="${img.width}" height="${img.height}" src="../Images/${imgName}" alt="Cover" />
+  <div style="text-align:center;">
+    <div style="display:none;">.</div>
+    <img width="${img.width}" height="${img.height}" src="../Images/${imgName}" />
   </div>
 </body>
 </html>`;
@@ -222,28 +298,20 @@ export async function createEpub({
     });
 
     for (const page of pagesToGenerate) {
-        // Manifest item — no scripted property needed (no inline JS)
         manifestItems += `<item id="${page.pageId}" href="Text/${page.pageName}" media-type="application/xhtml+xml"/>\n`;
 
-        // Always use text-align: center (matching KCC approach).
-        // The e-reader handles spread positioning via spine page-spread-left/right properties.
-        // In landscape: reader places pages side-by-side per spine props.
-        // In portrait: reader shows single pages centered.
         const xhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <title>${page.title}</title>
+  <link href="style.css" type="text/css" rel="stylesheet"/>
   <meta name="viewport" content="width=${page.width}, height=${page.height}"/>
-  <style type="text/css">
-    @page { margin: 0; }
-    body { margin: 0; padding: 0; background-color: #FFFFFF; }
-    div.page-container { text-align: center; margin: 0; padding: 0; }
-    img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }
-  </style>
 </head>
 <body>
-  <div class="page-container">
-    <img width="${page.width}" height="${page.height}" src="../Images/${page.imgName}" alt="Page ${page.globalImageCounter}" />
+  <div style="text-align:center;">
+    <div style="display:none;">.</div>
+    <img width="${page.width}" height="${page.height}" src="../Images/${page.imgName}" />
   </div>
 </body>
 </html>`;
@@ -255,7 +323,7 @@ export async function createEpub({
         const pageEntry = spinePages[i];
         const spreadProp = spreadProps[i];
         const propAttr = getPageSpreadProperty(spreadProp);
-        spineItems += `<itemref idref="${pageEntry.id}"${propAttr}/>\n`;
+        spineItems += `<itemref idref="${pageEntry.id}" linear="yes"${propAttr}/>\n`;
     }
 
     const spineDirectionAttr = getSpineDirectionAttribute(readingDirection);
@@ -273,6 +341,21 @@ export async function createEpub({
     const bookUuid = (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
         ? globalThis.crypto.randomUUID()
         : '12345-67890';
+    const isoDate = new Date().toISOString().slice(0, 19) + 'Z';
+
+    const navPages = [];
+    if (coverSource === COVER_SOURCES.CUSTOM && customCoverFile) {
+        navPages.push({ id: 'cover-page', pageName: 'cover.xhtml', title: 'Cover' });
+    }
+    for (const page of pagesToGenerate) {
+        navPages.push({ id: page.pageId, pageName: page.pageName, title: page.title });
+    }
+
+    const ncxContent = buildNcx({ title, bookUuid, pages: navPages });
+    oebps.file('toc.ncx', ncxContent);
+
+    const navContent = buildNav({ title, pages: navPages });
+    oebps.file('nav.xhtml', navContent);
 
     const contentOpf = `<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
@@ -281,23 +364,24 @@ export async function createEpub({
     <dc:creator opf:role="aut">${safeAuthor}</dc:creator>
     <dc:language>en</dc:language>
     <dc:identifier id="BookId">urn:uuid:${bookUuid}</dc:identifier>
+    <meta property="dcterms:modified">${isoDate}</meta>
     ${coverId ? `<meta name="cover" content="${coverId}"/>` : ''}
-    <meta property="rendition:layout">pre-paginated</meta>
-    <meta property="rendition:orientation">auto</meta>
-    <meta property="rendition:spread">${isLandscapeSpread ? 'landscape' : 'auto'}</meta>
-    <meta name="book-type" content="comic"/>
     <meta name="fixed-layout" content="true"/>
+    <meta name="original-resolution" content="${opfResolution}"/>
+    <meta name="book-type" content="comic"/>
+    <meta name="primary-writing-mode" content="${primaryWritingMode}"/>
     <meta name="zero-gutter" content="true"/>
     <meta name="zero-margin" content="true"/>
     <meta name="ke-border-color" content="#FFFFFF"/>
     <meta name="ke-border-width" content="0"/>
     <meta name="orientation-lock" content="none"/>
-    <meta name="primary-writing-mode" content="${primaryWritingMode}"/>
-    <meta name="original-resolution" content="${opfResolution}"/>
+    <meta name="region-mag" content="false"/>
+    <meta property="rendition:spread">${isLandscapeSpread ? 'landscape' : 'auto'}</meta>
+    <meta property="rendition:layout">pre-paginated</meta>
   </metadata>
   <manifest>
     ${manifestItems}  </manifest>
-  <spine${spineDirectionAttr}>
+  <spine${spineDirectionAttr} toc="ncx">
     ${spineItems}  </spine>
 </package>`;
     oebps.file('content.opf', contentOpf);
@@ -307,11 +391,9 @@ export async function createEpub({
     const epubBlob = await epubZip.generateAsync({
         type: 'blob',
         mimeType: 'application/epub+zip',
-        compression: 'DEFLATE',
-        compressionOptions: {
-            level: 9
-        }
+        compression: 'STORE'
     });
 
     return epubBlob;
 }
+
