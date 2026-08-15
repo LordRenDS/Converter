@@ -395,5 +395,73 @@ class TestPngEncoder(unittest.TestCase):
         errors = run_js_eval(code)
         self.assertEqual(len(errors), 2)
 
+    def test_compression_ratio_4bit_manga_page(self):
+        # 1272x1696 manga page (1,080,352 bytes uncompressed raw scanlines)
+        code = """
+        import { encode4BitPng } from './src/js/modules/png-encoder.js';
+        const width = 1272;
+        const height = 1696;
+        const data = new Uint8ClampedArray(width * height * 4);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                // Panel borders and manga halftones
+                const isBorder = (x < 40 || x > width - 40 || y < 40 || y > height - 40 || x % 300 === 0 || y % 400 === 0);
+                const val = isBorder ? 0 : 255;
+                data[idx] = val;
+                data[idx + 1] = val;
+                data[idx + 2] = val;
+                data[idx + 3] = 255;
+            }
+        }
+        const uint8 = encode4BitPng({ width, height, data });
+        console.log(JSON.stringify({
+            byteLength: uint8.length,
+            b64: Buffer.from(uint8).toString('base64')
+        }));
+        """
+        res = run_js_eval(code)
+        byte_length = res['byteLength']
+        uncompressed_raw = 1696 * (1 + 636) # 1,080,352 bytes
+        
+        # Must be compressed significantly (at least 10x smaller than 1.08MB for page with panels)
+        self.assertLess(byte_length, 100_000, f"Expected <100KB, got {byte_length} bytes")
+        
+        # Verify decoding
+        img = Image.open(io.BytesIO(base64.b64decode(res['b64'])))
+        self.assertEqual(img.size, (1272, 1696))
+        self.assertEqual(img.mode, 'P')
+
+    def test_compression_ratio_8bit_grayscale_page(self):
+        code = """
+        import { encode8BitPng } from './src/js/modules/png-encoder.js';
+        const width = 1272;
+        const height = 1696;
+        const data = new Uint8ClampedArray(width * height * 4);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                const isBorder = (x < 40 || x > width - 40 || y < 40 || y > height - 40 || x % 300 === 0 || y % 400 === 0);
+                const val = isBorder ? 0 : 240;
+                data[idx] = val;
+                data[idx + 1] = val;
+                data[idx + 2] = val;
+                data[idx + 3] = 255;
+            }
+        }
+        const uint8 = encode8BitPng({ width, height, data });
+        console.log(JSON.stringify({
+            byteLength: uint8.length,
+            b64: Buffer.from(uint8).toString('base64')
+        }));
+        """
+        res = run_js_eval(code)
+        byte_length = res['byteLength']
+        self.assertLess(byte_length, 150_000, f"Expected <150KB, got {byte_length} bytes")
+        img = Image.open(io.BytesIO(base64.b64decode(res['b64'])))
+        self.assertEqual(img.size, (1272, 1696))
+        self.assertEqual(img.mode, 'L')
+
 if __name__ == '__main__':
     unittest.main()
+

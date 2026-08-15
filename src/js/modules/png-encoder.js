@@ -64,49 +64,229 @@ export function adler32(buf, offset = 0, length = buf.length - offset) {
 }
 
 /**
- * Deflates data using RFC 1951 non-compressed (stored) blocks in RFC 1950 Zlib container.
- * Guaranteed to work in all JS environments without external dependencies.
+ * BitWriter for packing variable-length bitcodes into byte stream (RFC 1951, LSB-first).
+ */
+class BitWriter {
+    constructor(initialCapacity = 65536) {
+        this.buf = new Uint8Array(initialCapacity);
+        this.bitPos = 0; // bit offset in current byte (0..7)
+        this.bytePos = 0;
+    }
+
+    _ensure(extraBytes) {
+        if (this.bytePos + extraBytes + 8 > this.buf.length) {
+            const next = new Uint8Array(Math.max(this.buf.length * 2, this.bytePos + extraBytes + 65536));
+            next.set(this.buf);
+            this.buf = next;
+        }
+    }
+
+    writeBits(value, numBits) {
+        this._ensure((numBits + 7) >> 3);
+        while (numBits > 0) {
+            const bitsFree = 8 - this.bitPos;
+            const bitsToWrite = Math.min(numBits, bitsFree);
+            const mask = (1 << bitsToWrite) - 1;
+            this.buf[this.bytePos] |= (value & mask) << this.bitPos;
+            value >>>= bitsToWrite;
+            numBits -= bitsToWrite;
+            this.bitPos += bitsToWrite;
+            if (this.bitPos === 8) {
+                this.bitPos = 0;
+                this.bytePos++;
+            }
+        }
+    }
+
+    finish() {
+        if (this.bitPos > 0) {
+            this.bytePos++;
+            this.bitPos = 0;
+        }
+        return this.buf.subarray(0, this.bytePos);
+    }
+}
+
+/**
+ * Helper to reverse bit order for RFC 1951 Huffman code lookup.
+ */
+function bitReverse(code, len) {
+    let res = 0;
+    for (let i = 0; i < len; i++) {
+        res = (res << 1) | ((code >>> i) & 1);
+    }
+    return res;
+}
+
+// Precomputed RFC 1951 Fixed Huffman tables (bit-reversed for fast direct writing)
+const LIT_CODE = new Uint16Array(288);
+const LIT_LEN = new Uint8Array(288);
+
+for (let i = 0; i <= 143; i++) {
+    LIT_CODE[i] = bitReverse(0x30 + i, 8);
+    LIT_LEN[i] = 8;
+}
+for (let i = 144; i <= 255; i++) {
+    LIT_CODE[i] = bitReverse(0x190 + (i - 144), 9);
+    LIT_LEN[i] = 9;
+}
+for (let i = 256; i <= 279; i++) {
+    LIT_CODE[i] = bitReverse(i - 256, 7);
+    LIT_LEN[i] = 7;
+}
+for (let i = 280; i <= 287; i++) {
+    LIT_CODE[i] = bitReverse(0xC0 + (i - 280), 8);
+    LIT_LEN[i] = 8;
+}
+
+const DIST_CODE = new Uint16Array(32);
+const DIST_LEN = new Uint8Array(32);
+for (let i = 0; i < 32; i++) {
+    DIST_CODE[i] = bitReverse(i, 5);
+    DIST_LEN[i] = 5;
+}
+
+// RFC 1951 Length Base & Extra Bits
+const LENGTH_BASE = Object.freeze([
+    3, 4, 5, 6, 7, 8, 9, 10,
+    11, 13, 15, 17, 19, 23, 27, 31,
+    35, 43, 51, 59, 67, 83, 99, 115,
+    131, 163, 195, 227, 258
+]);
+const LENGTH_EXTRA_BITS = Object.freeze([
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 2, 2, 2, 2,
+    3, 3, 3, 3, 4, 4, 4, 4,
+    5, 5, 5, 5, 0
+]);
+
+function getLengthCode(len) {
+    if (len === 258) return [285, 0, 0];
+    let code = 257;
+    while (code < 285 && len >= LENGTH_BASE[code - 257 + 1]) {
+        code++;
+    }
+    const extraBits = LENGTH_EXTRA_BITS[code - 257];
+    const extraVal = len - LENGTH_BASE[code - 257];
+    return [code, extraBits, extraVal];
+}
+
+// RFC 1951 Distance Base & Extra Bits
+const DIST_BASE = Object.freeze([
+    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
+    257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
+]);
+const DIST_EXTRA_BITS = Object.freeze([
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
+    7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
+]);
+
+function getDistCode(dist) {
+    let code = 0;
+    while (code < 29 && dist >= DIST_BASE[code + 1]) {
+        code++;
+    }
+    const extraBits = DIST_EXTRA_BITS[code];
+    const extraVal = dist - DIST_BASE[code];
+    return [code, extraBits, extraVal];
+}
+
+/**
+ * Deflates data using RFC 1951 Deflate compression (LZ77 + Fixed Huffman) in RFC 1950 Zlib container.
+ * High performance, zero external dependencies.
  * @param {Uint8Array} data 
  * @returns {Uint8Array}
  */
 export function deflateZlib(data) {
-    const maxBlockSize = 65535;
+    const writer = new BitWriter(Math.max(1024, (data.length >> 1) + 128));
+
+    // Zlib Header: CMF = 0x78 (deflate, 32KB window), FLG = 0x9C (default compression level)
+    // Verification: (0x78 * 256 + 0x9C) % 31 === 0
+    writer.buf[0] = 0x78;
+    writer.buf[1] = 0x9C;
+    writer.bytePos = 2;
+
+    // Block Header: BFINAL = 1, BTYPE = 01 (Fixed Huffman) -> 3 bits: 011 (0x03)
+    writer.writeBits(0x03, 3);
+
     const len = data.length;
-    const numBlocks = Math.ceil(len / maxBlockSize) || 1;
-    const totalSize = 2 + (numBlocks * 5) + len + 4;
-    const out = new Uint8Array(totalSize);
+    const HASH_SIZE = 32768;
+    const HASH_MASK = HASH_SIZE - 1;
+    const head = new Int32Array(HASH_SIZE).fill(-1);
+    const prev = new Int32Array(32768);
 
-    // Zlib Header: CMF = 0x78 (deflate, 32KB window), FLG = 0x01 (check bits, level 0)
-    out[0] = 0x78;
-    out[1] = 0x01;
+    let pos = 0;
+    while (pos < len) {
+        let matchLength = 0;
+        let matchDist = 0;
 
-    let inOffset = 0;
-    let outOffset = 2;
+        if (pos + 3 <= len) {
+            const h = ((data[pos] << 10) ^ (data[pos + 1] << 5) ^ data[pos + 2]) & HASH_MASK;
+            let cur = head[h];
+            prev[pos & 32767] = cur;
+            head[h] = pos;
 
-    for (let b = 0; b < numBlocks; b++) {
-        const isLast = (b === numBlocks - 1);
-        const blockSize = Math.min(maxBlockSize, len - inOffset);
+            let chainLen = 32; // Optimized search depth for speed & high compression ratio
+            while (cur !== -1 && (pos - cur) <= 32768 && chainLen-- > 0) {
+                const dist = pos - cur;
+                if (data[cur + matchLength] === data[pos + matchLength]) {
+                    let k = 0;
+                    const maxK = Math.min(258, len - pos);
+                    while (k < maxK && data[cur + k] === data[pos + k]) {
+                        k++;
+                    }
+                    if (k > matchLength && k >= 3) {
+                        matchLength = k;
+                        matchDist = dist;
+                        if (matchLength === 258) break;
+                    }
+                }
+                cur = prev[cur & 32767];
+            }
+        }
 
-        out[outOffset++] = isLast ? 0x01 : 0x00; // BFINAL (1 bit) + BTYPE 00 (stored)
-        out[outOffset++] = blockSize & 0xFF;
-        out[outOffset++] = (blockSize >>> 8) & 0xFF;
-        const nlen = (~blockSize) & 0xFFFF;
-        out[outOffset++] = nlen & 0xFF;
-        out[outOffset++] = (nlen >>> 8) & 0xFF;
+        if (matchLength >= 3) {
+            // Encode Length
+            const [lenCode, lenExtraBits, lenExtraVal] = getLengthCode(matchLength);
+            writer.writeBits(LIT_CODE[lenCode], LIT_LEN[lenCode]);
+            if (lenExtraBits > 0) {
+                writer.writeBits(lenExtraVal, lenExtraBits);
+            }
 
-        out.set(data.subarray(inOffset, inOffset + blockSize), outOffset);
-        outOffset += blockSize;
-        inOffset += blockSize;
+            // Encode Distance
+            const [distCode, distExtraBits, distExtraVal] = getDistCode(matchDist);
+            writer.writeBits(DIST_CODE[distCode], DIST_LEN[distCode]);
+            if (distExtraBits > 0) {
+                writer.writeBits(distExtraVal, distExtraBits);
+            }
+
+            // Insert skipped match positions into hash table
+            for (let i = 1; i < matchLength && (pos + i + 2) < len; i++) {
+                const h = ((data[pos + i] << 10) ^ (data[pos + i + 1] << 5) ^ data[pos + i + 2]) & HASH_MASK;
+                prev[(pos + i) & 32767] = head[h];
+                head[h] = pos + i;
+            }
+            pos += matchLength;
+        } else {
+            const byte = data[pos++];
+            writer.writeBits(LIT_CODE[byte], LIT_LEN[byte]);
+        }
     }
 
-    // Adler-32 checksum (4 bytes big-endian)
-    const adler = adler32(data);
-    out[outOffset++] = (adler >>> 24) & 0xFF;
-    out[outOffset++] = (adler >>> 16) & 0xFF;
-    out[outOffset++] = (adler >>> 8) & 0xFF;
-    out[outOffset++] = adler & 0xFF;
+    // End of block: code 256 (7 bits: 0000000)
+    writer.writeBits(LIT_CODE[256], LIT_LEN[256]);
+    const compressed = writer.finish();
 
-    return out;
+    // Append 4-byte Adler-32 checksum (RFC 1950)
+    const adler = adler32(data);
+    const result = new Uint8Array(compressed.length + 4);
+    result.set(compressed, 0);
+    result[compressed.length] = (adler >>> 24) & 0xFF;
+    result[compressed.length + 1] = (adler >>> 16) & 0xFF;
+    result[compressed.length + 2] = (adler >>> 8) & 0xFF;
+    result[compressed.length + 3] = adler & 0xFF;
+
+    return result;
 }
 
 /**
