@@ -110,10 +110,10 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             expect(opf).toContain('<meta property="rendition:spread">landscape</meta>');
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-left"/>');
         });
 
         it('should set page-spread-left and page-spread-right for LTR single pages', async () => {
@@ -137,10 +137,10 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             expect(opf).toContain('<meta property="rendition:spread">landscape</meta>');
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-right"/>');
         });
 
         it('should split wide spread into S1 and S2 and apply backward pass for RTL', async () => {
@@ -164,10 +164,10 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             // [N, S1, S2, N] -> backward pass makes page0='left', S1='right', S2='left', page3='right'
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-right"/>');
         });
 
         it('should split wide spread into S1 and S2 and apply backward pass for LTR', async () => {
@@ -191,10 +191,10 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             // [N, S1, S2, N] in LTR -> backward pass makes page0='right', S1='left', S2='right', page3='left'
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-left"/>');
         });
 
         it('should handle three single pages before spread in RTL', async () => {
@@ -219,11 +219,11 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             // [N, N, N, S1, S2] in RTL -> backward pass: page0=left, page1=right, page2=left, page3=right, page4=left
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page4" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page4" linear="yes" properties="page-spread-left"/>');
         });
     });
 
@@ -249,9 +249,9 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             // [N, R, N] in RTL -> page0=left, page1=center, page2=right
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-center"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-center"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-right"/>');
         });
 
         it('should assign properties="page-spread-center" for unsplit wide spreads in LTR', async () => {
@@ -275,9 +275,9 @@ describe('epub-builder module', () => {
 
             const opf = filesCreated['OEBPS/content.opf'];
             // [N, R, N] in LTR -> page0=right, page1=center, page2=left
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-center"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-center"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-left"/>');
         });
     });
 
@@ -308,9 +308,9 @@ describe('epub-builder module', () => {
             });
 
             const opf = filesCreated['OEBPS/content.opf'];
-            expect(opf).toContain('<itemref idref="cover-page" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="cover-page" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-right"/>');
         });
 
         it('should assign properties="page-spread-left" to custom cover in LTR', async () => {
@@ -339,9 +339,9 @@ describe('epub-builder module', () => {
             });
 
             const opf = filesCreated['OEBPS/content.opf'];
-            expect(opf).toContain('<itemref idref="cover-page" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="cover-page" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-left"/>');
         });
     });
 
@@ -369,9 +369,9 @@ describe('epub-builder module', () => {
             expect(opf).not.toContain('page-spread-right');
             expect(opf).not.toContain('page-spread-left');
             expect(opf).not.toContain('page-spread-center');
-            expect(opf).toContain('<itemref idref="page0"/>');
-            expect(opf).toContain('<itemref idref="page1"/>');
-            expect(opf).toContain('<itemref idref="page2"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes"/>');
         });
 
         it('should not include page-spread properties in LTR when isLandscapeSpread is false', async () => {
@@ -395,8 +395,8 @@ describe('epub-builder module', () => {
             expect(opf).not.toContain('page-spread-right');
             expect(opf).not.toContain('page-spread-left');
             expect(opf).not.toContain('page-spread-center');
-            expect(opf).toContain('<itemref idref="page0"/>');
-            expect(opf).toContain('<itemref idref="page1"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes"/>');
         });
     });
 
@@ -421,10 +421,10 @@ describe('epub-builder module', () => {
             });
 
             const opf = filesCreated['OEBPS/content.opf'];
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-right"/>');
         });
 
         it('should offset initial page spread in LTR (right, left, right, left)', async () => {
@@ -447,15 +447,15 @@ describe('epub-builder module', () => {
             });
 
             const opf = filesCreated['OEBPS/content.opf'];
-            expect(opf).toContain('<itemref idref="page0" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page1" properties="page-spread-left"/>');
-            expect(opf).toContain('<itemref idref="page2" properties="page-spread-right"/>');
-            expect(opf).toContain('<itemref idref="page3" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page0" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page1" linear="yes" properties="page-spread-left"/>');
+            expect(opf).toContain('<itemref idref="page2" linear="yes" properties="page-spread-right"/>');
+            expect(opf).toContain('<itemref idref="page3" linear="yes" properties="page-spread-left"/>');
         });
     });
 
     describe('XHTML page alignment and CSS reset', () => {
-        it('should include @page reset and inline-block img styling in generated XHTML pages', async () => {
+        it('should include style.css and KCC alignment structure in generated XHTML pages', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
                 { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
@@ -468,10 +468,14 @@ describe('epub-builder module', () => {
                 jszipLib: MockJSZip
             });
 
+            const styleCss = filesCreated['OEBPS/Text/style.css'];
+            expect(styleCss).toContain('@page { margin: 0; }');
+            expect(styleCss).toContain('body { display: block; margin: 0; padding: 0; }');
+
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
-            expect(page0).toContain('@page { margin: 0; }');
-            expect(page0).toContain('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }');
-            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page0).toContain('<link href="style.css" type="text/css" rel="stylesheet"/>');
+            expect(page0).toContain('<div style="text-align:center;">');
+            expect(page0).toContain('<div style="display:none;">.</div>');
         });
 
         it('should always use text-align center for spread pages in RTL landscape (e-reader handles positioning)', async () => {
@@ -495,9 +499,8 @@ describe('epub-builder module', () => {
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
             const opf = filesCreated['OEBPS/content.opf'];
 
-            // Always text-align: center — e-reader positions pages via spine page-spread-* props
-            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page0).toContain('<div style="text-align:center;">');
+            expect(page1).toContain('<div style="text-align:center;">');
             // No inline JS orientation detection
             expect(page0).not.toContain('<script');
             expect(page1).not.toContain('<script');
@@ -526,9 +529,8 @@ describe('epub-builder module', () => {
             const page1 = filesCreated['OEBPS/Text/page_0001.xhtml'];
             const opf = filesCreated['OEBPS/content.opf'];
 
-            // Always text-align: center — e-reader positions pages via spine page-spread-* props
-            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(page1).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page0).toContain('<div style="text-align:center;">');
+            expect(page1).toContain('<div style="text-align:center;">');
             // No inline JS orientation detection
             expect(page0).not.toContain('<script');
             expect(page1).not.toContain('<script');
@@ -552,10 +554,10 @@ describe('epub-builder module', () => {
             });
 
             const page0 = filesCreated['OEBPS/Text/page_0000.xhtml'];
-            expect(page0).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
+            expect(page0).toContain('<div style="text-align:center;">');
         });
 
-        it('should include @page reset, text-align center, and vertical-align top in custom cover XHTML', async () => {
+        it('should include style.css and text-align center in custom cover XHTML', async () => {
             const { MockJSZip, filesCreated } = createMockZip();
             const mockImages = [
                 { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) }
@@ -574,9 +576,9 @@ describe('epub-builder module', () => {
             });
 
             const coverPage = filesCreated['OEBPS/Text/cover.xhtml'];
-            expect(coverPage).toContain('@page { margin: 0; }');
-            expect(coverPage).toContain('div.page-container { text-align: center; margin: 0; padding: 0; }');
-            expect(coverPage).toContain('img { margin: 0; padding: 0; display: inline-block; vertical-align: top; }');
+            expect(coverPage).toContain('<link href="style.css" type="text/css" rel="stylesheet"/>');
+            expect(coverPage).toContain('<div style="text-align:center;">');
+            expect(coverPage).toContain('<div style="display:none;">.</div>');
         });
     });
 });
