@@ -1,5 +1,5 @@
-import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY, DEVICE_PRESETS, getDevicePreset } from './constants.js';
-import { isSpread, getSplitOrder, blobToImage, processImage, splitImage } from './image-processor.js';
+import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY, DEVICE_PRESETS, getDevicePreset, SPREAD_MODES, SPREAD_POSITIONS } from './constants.js';
+import { blobToImage, processSpreadImage } from './image-processor.js';
 import { PAGE_TYPES, calculatePageSpreads, getPageSpreadProperty } from './spread-calculator.js';
 
 /**
@@ -20,6 +20,10 @@ export function getSpineDirectionAttribute(direction) {
  * @param {string} options.title
  * @param {string} options.author
  * @param {boolean} [options.isOptimizeEnabled=false]
+ * @param {string} [options.spreadMode=SPREAD_MODES.SPLIT]
+ * @param {boolean} [options.spreadNoRotate=false]
+ * @param {boolean} [options.spreadRotateRight=false]
+ * @param {string} [options.spreadPosition='after']
  * @param {string} [options.readingDirection='ltr']
  * @param {string} [options.outputFormat='original']
  * @param {File|Blob|null} [options.customCoverFile=null]
@@ -41,6 +45,10 @@ export async function createEpub({
     title = 'Untitled',
     author = 'Unknown Author',
     isOptimizeEnabled = false,
+    spreadMode = undefined,
+    spreadNoRotate = false,
+    spreadRotateRight = false,
+    spreadPosition = SPREAD_POSITIONS.AFTER,
     readingDirection = READING_DIRECTIONS.LTR,
     outputFormat = OUTPUT_FORMATS.ORIGINAL,
     customCoverFile = null,
@@ -60,6 +68,10 @@ export async function createEpub({
     if (!ZipConstructor) {
         throw new Error('JSZip library is not available');
     }
+
+    const effectiveSpreadMode = spreadMode !== undefined
+        ? spreadMode
+        : (isOptimizeEnabled ? SPREAD_MODES.SPLIT : SPREAD_MODES.OFF);
 
     let effectiveDevice = null;
     if (targetDevice) {
@@ -138,56 +150,21 @@ export async function createEpub({
     // Process images
     for (let i = 0; i < images.length; i++) {
         const imgData = images[i];
-        let ext = imgData.name.split('.').pop().toLowerCase();
-        let mimeType = ext === 'jpg' ? 'jpeg' : ext;
-
         const blobData = await imgData.async('blob');
-        const processedImages = [];
-
         const img = await blobToImage(blobData);
-        let isSpreadProcessed = false;
 
-        if (isOptimizeEnabled) {
-            if (isSpread(img.width, img.height)) {
-                isSpreadProcessed = true;
-                const halves = await splitImage(img, outputFormat, jpegQuality);
-                const order = getSplitOrder(readingDirection);
-
-                if (outputFormat === OUTPUT_FORMATS.JPEG) {
-                    ext = 'jpg';
-                    mimeType = 'jpeg';
-                } else {
-                    ext = 'png';
-                    mimeType = 'png';
-                }
-
-                const leftImg = await blobToImage(halves.left);
-                const rightImg = await blobToImage(halves.right);
-
-                const leftRes = await processImage(leftImg, halves.left, effectiveDevice, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality, isUpscaleEnabled);
-                const rightRes = await processImage(rightImg, halves.right, effectiveDevice, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality, isUpscaleEnabled);
-
-                if (order[0] === 'left') {
-                    processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, type: PAGE_TYPES.SPREAD_PART_1 });
-                    processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, type: PAGE_TYPES.SPREAD_PART_2 });
-                } else {
-                    processedImages.push({ blob: rightRes.blob, ext, mimeType, suffix: '_right', width: rightRes.width, height: rightRes.height, type: PAGE_TYPES.SPREAD_PART_1 });
-                    processedImages.push({ blob: leftRes.blob, ext, mimeType, suffix: '_left', width: leftRes.width, height: leftRes.height, type: PAGE_TYPES.SPREAD_PART_2 });
-                }
-            }
-        }
-
-        if (!isSpreadProcessed) {
-            const res = await processImage(img, blobData, effectiveDevice, isGrayscaleEnabled, mimeType, outputFormat, jpegQuality, isUpscaleEnabled);
-            let finalExt = ext;
-            let finalMime = mimeType;
-            if (outputFormat === OUTPUT_FORMATS.JPEG) {
-                finalExt = 'jpg';
-                finalMime = 'jpeg';
-            }
-            const pageType = isSpread(img.width, img.height) ? PAGE_TYPES.SPREAD_CENTER : PAGE_TYPES.NORMAL;
-            processedImages.push({ blob: res.blob, ext: finalExt, mimeType: finalMime, suffix: '', width: res.width, height: res.height, type: pageType });
-        }
+        const processedImages = await processSpreadImage(img, blobData, {
+            spreadMode: effectiveSpreadMode,
+            readingDirection,
+            noRotate: spreadNoRotate,
+            rotateRight: spreadRotateRight,
+            spreadPosition,
+            targetDeviceOrFit: effectiveDevice,
+            isGrayscale: isGrayscaleEnabled,
+            outputFormat,
+            quality: jpegQuality,
+            isUpscale: isUpscaleEnabled
+        });
 
         for (const procImg of processedImages) {
             if (procImg.width > maxWidth) maxWidth = procImg.width;
@@ -204,12 +181,14 @@ export async function createEpub({
                 coverId = id;
             }
 
-            manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="image/${procImg.mimeType}"${properties}/>\n`;
+            const mediaType = procImg.mimeType.startsWith('image/')
+                ? procImg.mimeType
+                : `image/${procImg.mimeType}`;
+
+            manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="${mediaType}"${properties}/>\n`;
 
             const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
             const pageId = `page${globalImageCounter}`;
-            // NOTE: manifest item for XHTML page is added after spread calculation
-            // so we can include properties="scripted" only for pages that need it
 
             const spineIndex = spinePages.length;
             spinePages.push({ id: pageId, type: procImg.type });

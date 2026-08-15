@@ -38,7 +38,7 @@ class TestEpubBuilderIntegration(unittest.TestCase):
     def setUp(self):
         self.base_env = r"""
         import { createEpub, getSpineDirectionAttribute } from './src/js/modules/epub-builder.js';
-        import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS } from './src/js/modules/constants.js';
+        import { READING_DIRECTIONS, COVER_SOURCES, OUTPUT_FORMATS, SPREAD_MODES, SPREAD_POSITIONS, ROTATION_DIRECTIONS } from './src/js/modules/constants.js';
 
         // Mock environment
         globalThis.Blob = class Blob {
@@ -56,9 +56,22 @@ class TestEpubBuilderIntegration(unittest.TestCase):
                 this.height = 0;
             }
             getContext() {
+                const self = this;
                 return {
+                    translate: () => {},
+                    rotate: () => {},
                     drawImage: () => {},
-                    getImageData: () => ({ data: new Uint8Array(4) }),
+                    getImageData: (sx, sy, sw, sh) => {
+                        const len = (sw || self.width || 1) * (sh || self.height || 1) * 4;
+                        const data = new Uint8ClampedArray(len);
+                        for (let i = 0; i < len; i += 4) {
+                            data[i] = 128;
+                            data[i + 1] = 128;
+                            data[i + 2] = 128;
+                            data[i + 3] = 255;
+                        }
+                        return { width: sw || self.width, height: sh || self.height, data };
+                    },
                     putImageData: () => {}
                 };
             }
@@ -985,6 +998,234 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(data['deviceSelectValue'], 'kindle_pw11')
         self.assertTrue(data['hasUpscaleCheckbox'])
         self.assertFalse(data['upscaleChecked'])
+
+    def test_epub_spread_mode_split_ltr_and_rtl(self):
+        code = self.base_env + r"""
+        const { zip: zipLtr, files: filesLtr } = createMockZip();
+        const mockSpread = [
+            { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+        ];
+
+        await createEpub({
+            images: mockSpread,
+            title: 'Split LTR Test',
+            readingDirection: READING_DIRECTIONS.LTR,
+            spreadMode: SPREAD_MODES.SPLIT,
+            isLandscapeSpread: true,
+            jszipLib: class { constructor() { return zipLtr; } }
+        });
+
+        const { zip: zipRtl, files: filesRtl } = createMockZip();
+        await createEpub({
+            images: mockSpread,
+            title: 'Split RTL Test',
+            readingDirection: READING_DIRECTIONS.RTL,
+            spreadMode: SPREAD_MODES.SPLIT,
+            isLandscapeSpread: true,
+            jszipLib: class { constructor() { return zipRtl; } }
+        });
+
+        console.log(JSON.stringify({
+            ltrFiles: Object.keys(filesLtr),
+            ltrOpf: filesLtr['OEBPS/content.opf'],
+            rtlFiles: Object.keys(filesRtl),
+            rtlOpf: filesRtl['OEBPS/content.opf']
+        }));
+        """
+        data = run_js_eval(code)
+        # LTR: left first, then right
+        self.assertIn('OEBPS/Images/image_0000_left.jpg', data['ltrFiles'])
+        self.assertIn('OEBPS/Images/image_0001_right.jpg', data['ltrFiles'])
+        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', data['ltrOpf'])
+        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', data['ltrOpf'])
+
+        # RTL: right first, then left
+        self.assertIn('OEBPS/Images/image_0000_right.jpg', data['rtlFiles'])
+        self.assertIn('OEBPS/Images/image_0001_left.jpg', data['rtlFiles'])
+        self.assertIn('<itemref idref="page0" properties="page-spread-right"/>', data['rtlOpf'])
+        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', data['rtlOpf'])
+
+    def test_epub_spread_mode_rotate(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockSpread = [
+            { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+        ];
+
+        await createEpub({
+            images: mockSpread,
+            title: 'Rotate Spread Test',
+            readingDirection: READING_DIRECTIONS.LTR,
+            spreadMode: SPREAD_MODES.ROTATE,
+            isLandscapeSpread: true,
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        console.log(JSON.stringify({
+            files: Object.keys(files),
+            opf: files['OEBPS/content.opf'],
+            page0: files['OEBPS/Text/page_0000.xhtml']
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertIn('OEBPS/Images/image_0000_spread.jpg', data['files'])
+        self.assertIn('id="img0" href="Images/image_0000_spread.jpg" media-type="image/jpeg"', data['opf'])
+        self.assertIn('<itemref idref="page0" properties="page-spread-center"/>', data['opf'])
+        # Rotated 90 deg -> width 1000, height 2000
+        self.assertIn('width="1000"', data['page0'])
+        self.assertIn('height="2000"', data['page0'])
+
+    def test_epub_spread_mode_both_before_and_after(self):
+        code = self.base_env + r"""
+        const { zip: zipBefore, files: filesBefore } = createMockZip();
+        const mockSpread = [
+            { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+        ];
+
+        await createEpub({
+            images: mockSpread,
+            title: 'Both Before Test',
+            readingDirection: READING_DIRECTIONS.LTR,
+            spreadMode: SPREAD_MODES.BOTH,
+            spreadPosition: SPREAD_POSITIONS.BEFORE,
+            isLandscapeSpread: true,
+            jszipLib: class { constructor() { return zipBefore; } }
+        });
+
+        const { zip: zipAfter, files: filesAfter } = createMockZip();
+        await createEpub({
+            images: mockSpread,
+            title: 'Both After Test',
+            readingDirection: READING_DIRECTIONS.LTR,
+            spreadMode: SPREAD_MODES.BOTH,
+            spreadPosition: SPREAD_POSITIONS.AFTER,
+            isLandscapeSpread: true,
+            jszipLib: class { constructor() { return zipAfter; } }
+        });
+
+        console.log(JSON.stringify({
+            beforeFiles: Object.keys(filesBefore),
+            beforeOpf: filesBefore['OEBPS/content.opf'],
+            afterFiles: Object.keys(filesAfter),
+            afterOpf: filesAfter['OEBPS/content.opf']
+        }));
+        """
+        data = run_js_eval(code)
+        # BEFORE: [R, S1, S2] -> image_0000_spread, image_0001_left, image_0002_right
+        self.assertIn('OEBPS/Images/image_0000_spread.jpg', data['beforeFiles'])
+        self.assertIn('OEBPS/Images/image_0001_left.jpg', data['beforeFiles'])
+        self.assertIn('OEBPS/Images/image_0002_right.jpg', data['beforeFiles'])
+        self.assertIn('<itemref idref="page0" properties="page-spread-center"/>', data['beforeOpf'])
+        self.assertIn('<itemref idref="page1" properties="page-spread-left"/>', data['beforeOpf'])
+        self.assertIn('<itemref idref="page2" properties="page-spread-right"/>', data['beforeOpf'])
+
+        # AFTER: [S1, S2, R] -> image_0000_left, image_0001_right, image_0002_spread
+        self.assertIn('OEBPS/Images/image_0000_left.jpg', data['afterFiles'])
+        self.assertIn('OEBPS/Images/image_0001_right.jpg', data['afterFiles'])
+        self.assertIn('OEBPS/Images/image_0002_spread.jpg', data['afterFiles'])
+        self.assertIn('<itemref idref="page0" properties="page-spread-left"/>', data['afterOpf'])
+        self.assertIn('<itemref idref="page1" properties="page-spread-right"/>', data['afterOpf'])
+        self.assertIn('<itemref idref="page2" properties="page-spread-center"/>', data['afterOpf'])
+
+    def test_epub_spread_mode_no_rotate(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockSpread = [
+            { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+        ];
+
+        await createEpub({
+            images: mockSpread,
+            title: 'No Rotate Test',
+            readingDirection: READING_DIRECTIONS.LTR,
+            spreadMode: SPREAD_MODES.ROTATE,
+            spreadNoRotate: true,
+            isLandscapeSpread: true,
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        console.log(JSON.stringify({
+            files: Object.keys(files),
+            page0: files['OEBPS/Text/page_0000.xhtml']
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertIn('OEBPS/Images/image_0000_spread.jpg', data['files'])
+        # Unrotated: width 2000, height 1000
+        self.assertIn('width="2000"', data['page0'])
+        self.assertIn('height="1000"', data['page0'])
+
+    def test_epub_output_formats_png_indexed(self):
+        code = self.base_env + r"""
+        const { zip: zip4, files: files4 } = createMockZip();
+        const mockImages = [
+            { name: 'page.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+        ];
+
+        await createEpub({
+            images: mockImages,
+            title: 'PNG 4-bit Test',
+            outputFormat: OUTPUT_FORMATS.PNG_4BIT,
+            jszipLib: class { constructor() { return zip4; } }
+        });
+
+        const { zip: zip8, files: files8 } = createMockZip();
+        await createEpub({
+            images: mockImages,
+            title: 'PNG 8-bit Test',
+            outputFormat: OUTPUT_FORMATS.PNG_8BIT,
+            jszipLib: class { constructor() { return zip8; } }
+        });
+
+        console.log(JSON.stringify({
+            files4: Object.keys(files4),
+            opf4: files4['OEBPS/content.opf'],
+            files8: Object.keys(files8),
+            opf8: files8['OEBPS/content.opf']
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertIn('OEBPS/Images/image_0000.png', data['files4'])
+        self.assertIn('id="img0" href="Images/image_0000.png" media-type="image/png"', data['opf4'])
+
+        self.assertIn('OEBPS/Images/image_0000.png', data['files8'])
+        self.assertIn('id="img0" href="Images/image_0000.png" media-type="image/png"', data['opf8'])
+
+    def test_epub_spread_mode_backward_compatibility(self):
+        code = self.base_env + r"""
+        const mockSpread = [
+            { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) }
+        ];
+
+        // 1. isOptimizeEnabled: true, spreadMode not passed -> SPLIT
+        const { zip: zipOpt, files: filesOpt } = createMockZip();
+        await createEpub({
+            images: mockSpread,
+            title: 'Back Compat Opt True',
+            isOptimizeEnabled: true,
+            jszipLib: class { constructor() { return zipOpt; } }
+        });
+
+        // 2. isOptimizeEnabled: false, spreadMode not passed -> OFF (1 page)
+        const { zip: zipNoOpt, files: filesNoOpt } = createMockZip();
+        await createEpub({
+            images: mockSpread,
+            title: 'Back Compat Opt False',
+            isOptimizeEnabled: false,
+            jszipLib: class { constructor() { return zipNoOpt; } }
+        });
+
+        console.log(JSON.stringify({
+            filesOpt: Object.keys(filesOpt),
+            filesNoOpt: Object.keys(filesNoOpt)
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertIn('OEBPS/Images/image_0000_left.jpg', data['filesOpt'])
+        self.assertIn('OEBPS/Images/image_0001_right.jpg', data['filesOpt'])
+
+        self.assertIn('OEBPS/Images/image_0000.jpg', data['filesNoOpt'])
+        self.assertNotIn('OEBPS/Images/image_0001.jpg', data['filesNoOpt'])
 
 if __name__ == '__main__':
     unittest.main()
