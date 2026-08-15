@@ -65,10 +65,10 @@
 **Interfaces:**
 - Produces: Checkbox `#crop-margins-checkbox` in `index.html` wired to `isCropMarginsEnabled` option in `ui-controller.js` and `createEpub`.
 
-- [ ] **Step 1: Add checkbox to `index.html`**
-- [ ] **Step 2: Update `ui-controller.js` to read `#crop-margins-checkbox` and pass `isCropMarginsEnabled`**
-- [ ] **Step 3: Verify with unit tests**
-- [ ] **Step 4: Commit changes**
+- [x] **Step 1: Add checkbox to `index.html`**
+- [x] **Step 2: Update `ui-controller.js` to read `#crop-margins-checkbox` and pass `isCropMarginsEnabled`**
+- [x] **Step 3: Verify with unit tests**
+- [x] **Step 4: Commit changes**
 
 ---
 
@@ -77,6 +77,6 @@
 **Files:**
 - Test: `test/test_epub_builder.py`, `test/test_image_processor.py`, `test/test_spread_calculator.py`, `test/test_png_encoder.py`
 
-- [ ] **Step 1: Run complete test suite: `D:\Programs\Dev\Python\Python312\python.exe -m unittest discover -s test`**
-- [ ] **Step 2: Verify all tests pass with 0 failures**
-- [ ] **Step 3: Commit any final test adjustments**
+- [x] **Step 1: Run complete test suite: `D:\Programs\Dev\Python\Python312\python.exe -m unittest discover -s test`**
+- [x] **Step 2: Verify all tests pass with 0 failures**
+- [x] **Step 3: Commit any final test adjustments**
