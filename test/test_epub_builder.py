@@ -799,6 +799,41 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(data['oasis'], {'width': 1264, 'height': 1680})
         self.assertEqual(data['original'], {'width': 0, 'height': 0})
 
+    def test_constants_exports(self):
+        code = r"""
+        import { SPREAD_MODES, SPREAD_POSITIONS, ROTATION_DIRECTIONS, OUTPUT_FORMATS } from './src/js/modules/constants.js';
+
+        console.log(JSON.stringify({
+            SPREAD_MODES,
+            SPREAD_POSITIONS,
+            ROTATION_DIRECTIONS,
+            OUTPUT_FORMATS
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertEqual(data['SPREAD_MODES'], {
+            'OFF': 'off',
+            'SPLIT': 'split',
+            'ROTATE': 'rotate',
+            'BOTH': 'both'
+        })
+        self.assertEqual(data['SPREAD_POSITIONS'], {
+            'AFTER': 'after',
+            'BEFORE': 'before'
+        })
+        self.assertEqual(data['ROTATION_DIRECTIONS'], {
+            'CCW': 'ccw',
+            'CW': 'cw'
+        })
+        self.assertEqual(data['OUTPUT_FORMATS'], {
+            'ORIGINAL': 'original',
+            'JPEG': 'jpeg',
+            'PNG': 'png',
+            'PNG_8BIT': 'png_8bit',
+            'PNG_4BIT': 'png_4bit'
+        })
+
+
     def test_process_image_proportional_scaling(self):
         code = self.base_env + r"""
         import { processImage } from './src/js/modules/image-processor.js';

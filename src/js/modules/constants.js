@@ -63,6 +63,23 @@ export const READING_DIRECTIONS = {
     RTL: 'rtl'
 };
 
+export const SPREAD_MODES = {
+    OFF: 'off',
+    SPLIT: 'split',
+    ROTATE: 'rotate',
+    BOTH: 'both'
+};
+
+export const SPREAD_POSITIONS = {
+    AFTER: 'after',
+    BEFORE: 'before'
+};
+
+export const ROTATION_DIRECTIONS = {
+    CCW: 'ccw',
+    CW: 'cw'
+};
+
 export const COVER_SOURCES = {
     PAGE: 'page',
     CUSTOM: 'custom'
@@ -70,8 +87,12 @@ export const COVER_SOURCES = {
 
 export const OUTPUT_FORMATS = {
     ORIGINAL: 'original',
-    JPEG: 'jpeg'
+    JPEG: 'jpeg',
+    PNG: 'png',
+    PNG_8BIT: 'png_8bit',
+    PNG_4BIT: 'png_4bit'
 };
+
 
 export const DEFAULT_JPEG_QUALITY = 0.85;
 
