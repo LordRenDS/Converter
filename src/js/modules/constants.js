@@ -96,6 +96,9 @@ export const OUTPUT_FORMATS = {
 
 export const DEFAULT_JPEG_QUALITY = 0.85;
 
+export const AUTO_CROP_THRESHOLD = 0.02;
+export const DEFAULT_MAX_CROP_RATIO = 0.10;
+
 export const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp)$/i;
 
 export const MIME_TYPES = {

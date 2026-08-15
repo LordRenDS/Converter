@@ -99,6 +99,7 @@ ${listItems}
  * @param {number} [options.coverPageNumber=1]
  * @param {string|Object|null} [options.targetDevice=null]
  * @param {boolean} [options.isUpscaleEnabled=true]
+ * @param {boolean} [options.isCropMarginsEnabled=true]
  * @param {boolean} [options.isKindleFitEnabled=false]
  * @param {boolean} [options.isGrayscaleEnabled=false]
  * @param {number} [options.jpegQuality=0.85]
@@ -124,6 +125,7 @@ export async function createEpub({
     coverPageNumber = 1,
     targetDevice = null,
     isUpscaleEnabled = true,
+    isCropMarginsEnabled = true,
     isKindleFitEnabled = false,
     isGrayscaleEnabled = false,
     jpegQuality = DEFAULT_JPEG_QUALITY,
@@ -239,7 +241,8 @@ body {
             isGrayscale: isGrayscaleEnabled,
             outputFormat,
             quality: jpegQuality,
-            isUpscale: isUpscaleEnabled
+            isUpscale: isUpscaleEnabled,
+            isCropMarginsEnabled
         });
 
         for (const procImg of processedImages) {

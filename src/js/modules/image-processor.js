@@ -6,7 +6,9 @@ import {
     SPREAD_MODES,
     SPREAD_POSITIONS,
     ROTATION_DIRECTIONS,
-    OUTPUT_FORMATS
+    OUTPUT_FORMATS,
+    AUTO_CROP_THRESHOLD,
+    DEFAULT_MAX_CROP_RATIO
 } from './constants.js';
 import { PAGE_TYPES } from './spread-calculator.js';
 import { encode4BitPng, encode8BitPng } from './png-encoder.js';
@@ -129,6 +131,194 @@ function getMimeAndExt(outputFormat, defaultMime = 'image/jpeg') {
 }
 
 /**
+ * Detects solid color (white or black) margins and crops them, clamped to maxCropRatio.
+ * Matches KCC auto-cropping algorithm.
+ * @param {HTMLCanvasElement | HTMLImageElement} canvasOrImg 
+ * @param {Object} [options={}]
+ * @param {boolean} [options.isCropMarginsEnabled=true]
+ * @param {number} [options.maxCropRatio=DEFAULT_MAX_CROP_RATIO]
+ * @param {number} [options.threshold=20]
+ * @param {number} [options.noiseThreshold=0.005]
+ * @returns {HTMLCanvasElement | HTMLImageElement}
+ */
+export function detectAndCropMargins(canvasOrImg, options = {}) {
+    const {
+        isCropMarginsEnabled = true,
+        maxCropRatio = DEFAULT_MAX_CROP_RATIO,
+        threshold = 20,
+        noiseThreshold = 0.005
+    } = options;
+
+    if (!isCropMarginsEnabled || !canvasOrImg) {
+        return canvasOrImg;
+    }
+
+    const width = canvasOrImg.width;
+    const height = canvasOrImg.height;
+    if (!width || !height || width <= 0 || height <= 0) {
+        return canvasOrImg;
+    }
+
+    let srcCanvas = canvasOrImg;
+    let ctx;
+    if (typeof canvasOrImg.getContext === 'function') {
+        ctx = canvasOrImg.getContext('2d');
+    } else {
+        srcCanvas = document.createElement('canvas');
+        srcCanvas.width = width;
+        srcCanvas.height = height;
+        ctx = srcCanvas.getContext('2d');
+        if (ctx) {
+            ctx.drawImage(canvasOrImg, 0, 0);
+        }
+    }
+
+    if (!ctx) {
+        return canvasOrImg;
+    }
+
+    const imgData = ctx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+
+    const getLuminance = (x, y) => {
+        const idx = (y * width + x) * 4;
+        return 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+    };
+
+    const samplePoints = [
+        [0, 0],
+        [width - 1, 0],
+        [0, height - 1],
+        [width - 1, height - 1],
+        [Math.floor(width / 2), 0],
+        [0, Math.floor(height / 2)],
+        [width - 1, Math.floor(height / 2)],
+        [Math.floor(width / 2), height - 1]
+    ];
+
+    let totalSampleLum = 0;
+    for (const [sx, sy] of samplePoints) {
+        totalSampleLum += getLuminance(sx, sy);
+    }
+    const avgLum = totalSampleLum / samplePoints.length;
+    const isLightBg = avgLum > 128;
+
+    const isContentPixel = (x, y) => {
+        const idx = (y * width + x) * 4;
+        const a = data[idx + 3];
+        if (a < 128) return false;
+        const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        return isLightBg ? lum < (255 - threshold) : lum > threshold;
+    };
+
+    const rowNoiseMin = noiseThreshold * width;
+    const colNoiseMin = noiseThreshold * height;
+
+    // Scan top
+    let detectedTop = 0;
+    let foundTop = false;
+    for (let y = 0; y < height; y++) {
+        let count = 0;
+        for (let x = 0; x < width; x++) {
+            if (isContentPixel(x, y)) {
+                count++;
+                if (count > rowNoiseMin) {
+                    detectedTop = y;
+                    foundTop = true;
+                    break;
+                }
+            }
+        }
+        if (foundTop) break;
+    }
+
+    if (!foundTop) {
+        return canvasOrImg;
+    }
+
+    // Scan bottom
+    let detectedBottom = height;
+    let foundBottom = false;
+    for (let y = height - 1; y >= 0; y--) {
+        let count = 0;
+        for (let x = 0; x < width; x++) {
+            if (isContentPixel(x, y)) {
+                count++;
+                if (count > rowNoiseMin) {
+                    detectedBottom = y + 1;
+                    foundBottom = true;
+                    break;
+                }
+            }
+        }
+        if (foundBottom) break;
+    }
+
+    // Scan left
+    let detectedLeft = 0;
+    let foundLeft = false;
+    for (let x = 0; x < width; x++) {
+        let count = 0;
+        for (let y = 0; y < height; y++) {
+            if (isContentPixel(x, y)) {
+                count++;
+                if (count > colNoiseMin) {
+                    detectedLeft = x;
+                    foundLeft = true;
+                    break;
+                }
+            }
+        }
+        if (foundLeft) break;
+    }
+
+    // Scan right
+    let detectedRight = width;
+    let foundRight = false;
+    for (let x = width - 1; x >= 0; x--) {
+        let count = 0;
+        for (let y = 0; y < height; y++) {
+            if (isContentPixel(x, y)) {
+                count++;
+                if (count > colNoiseMin) {
+                    detectedRight = x + 1;
+                    foundRight = true;
+                    break;
+                }
+            }
+        }
+        if (foundRight) break;
+    }
+
+    const maxLeft = Math.floor(width * maxCropRatio);
+    const left = Math.min(detectedLeft, maxLeft);
+
+    const maxTop = Math.floor(height * maxCropRatio);
+    const top = Math.min(detectedTop, maxTop);
+
+    const minRight = Math.ceil(width * (1 - maxCropRatio));
+    const right = Math.max(detectedRight, minRight);
+
+    const minBottom = Math.ceil(height * (1 - maxCropRatio));
+    const bottom = Math.max(detectedBottom, minBottom);
+
+    if (left >= right || top >= bottom || (left === 0 && top === 0 && right === width && bottom === height)) {
+        return canvasOrImg;
+    }
+
+    const cropW = right - left;
+    const cropH = bottom - top;
+    const croppedCanvas = document.createElement('canvas');
+    croppedCanvas.width = cropW;
+    croppedCanvas.height = cropH;
+    const croppedCtx = croppedCanvas.getContext('2d');
+    if (croppedCtx) {
+        croppedCtx.drawImage(canvasOrImg, left, top, cropW, cropH, 0, 0, cropW, cropH);
+    }
+    return croppedCanvas;
+}
+
+/**
  * Processes an image with optional device resolution fit, upscale/downscale scaling, grayscale conversion, and format changes.
  * @param {HTMLImageElement | HTMLCanvasElement} img 
  * @param {Blob | null} [originalBlob=null] 
@@ -138,6 +328,7 @@ function getMimeAndExt(outputFormat, defaultMime = 'image/jpeg') {
  * @param {string} [outputFormat=OUTPUT_FORMATS.ORIGINAL] 
  * @param {number} [quality=DEFAULT_JPEG_QUALITY] 
  * @param {boolean} [isUpscale=true] 
+ * @param {boolean} [isCropMarginsEnabled=true]
  * @returns {Promise<{ blob: Blob, width: number, height: number, ext: string, mimeType: string }>}
  */
 export async function processImage(
@@ -148,11 +339,22 @@ export async function processImage(
     mimeType = 'image/jpeg',
     outputFormat = OUTPUT_FORMATS.ORIGINAL,
     quality = DEFAULT_JPEG_QUALITY,
-    isUpscale = true
+    isUpscale = true,
+    isCropMarginsEnabled = true
 ) {
-    let width = img.width;
-    let height = img.height;
+    let currentImg = img;
     let needsProcessing = false;
+
+    if (isCropMarginsEnabled) {
+        const cropped = detectAndCropMargins(img, { isCropMarginsEnabled });
+        if (cropped && cropped !== img) {
+            currentImg = cropped;
+            needsProcessing = true;
+        }
+    }
+
+    let width = currentImg.width;
+    let height = currentImg.height;
 
     const { mimeType: targetMime, ext: targetExt } = getMimeAndExt(outputFormat, mimeType || (originalBlob && originalBlob.type));
 
@@ -168,15 +370,34 @@ export async function processImage(
         targetHeight = preset ? preset.height : 0;
     }
 
-    if (targetWidth > 0 && targetHeight > 0) {
-        const isLarger = width > targetWidth || height > targetHeight;
-        const isSmaller = width < targetWidth && height < targetHeight;
+    let isFitMode = false;
+    let drawParams = null;
 
-        if (isLarger || (isUpscale && isSmaller)) {
-            const ratio = Math.min(targetWidth / width, targetHeight / height);
-            width = Math.round(width * ratio);
-            height = Math.round(height * ratio);
+    if (targetWidth > 0 && targetHeight > 0) {
+        const imageRatio = width / height;
+        const deviceRatio = targetWidth / targetHeight;
+
+        if (Math.abs(imageRatio - deviceRatio) < AUTO_CROP_THRESHOLD) {
+            isFitMode = true;
+            const scale = Math.max(targetWidth / width, targetHeight / height);
+            const scaledW = width * scale;
+            const scaledH = height * scale;
+            const dx = (targetWidth - scaledW) / 2;
+            const dy = (targetHeight - scaledH) / 2;
+            drawParams = { dx, dy, dw: scaledW, dh: scaledH };
+            width = targetWidth;
+            height = targetHeight;
             needsProcessing = true;
+        } else {
+            const isLarger = width > targetWidth || height > targetHeight;
+            const isSmaller = width < targetWidth && height < targetHeight;
+
+            if (isLarger || (isUpscale && isSmaller)) {
+                const ratio = Math.min(targetWidth / width, targetHeight / height);
+                width = Math.round(width * ratio);
+                height = Math.round(height * ratio);
+                needsProcessing = true;
+            }
         }
     }
 
@@ -216,7 +437,11 @@ export async function processImage(
         if ('imageSmoothingQuality' in ctx) {
             ctx.imageSmoothingQuality = 'high';
         }
-        ctx.drawImage(img, 0, 0, width, height);
+        if (isFitMode && drawParams) {
+            ctx.drawImage(currentImg, drawParams.dx, drawParams.dy, drawParams.dw, drawParams.dh);
+        } else {
+            ctx.drawImage(currentImg, 0, 0, width, height);
+        }
 
         if (isGrayscale && outputFormat !== OUTPUT_FORMATS.PNG_4BIT && outputFormat !== OUTPUT_FORMATS.PNG_8BIT) {
             const imgData = ctx.getImageData(0, 0, width, height);
@@ -317,6 +542,7 @@ export async function splitImage(img, format = OUTPUT_FORMATS.ORIGINAL, quality 
  * @param {number} [options.quality=DEFAULT_JPEG_QUALITY]
  * @param {boolean} [options.isUpscale=true]
  * @param {string} [options.mimeType='image/jpeg']
+ * @param {boolean} [options.isCropMarginsEnabled=true]
  * @returns {Promise<Array<{ blob: Blob, width: number, height: number, ext: string, mimeType: string, suffix: string, type: string }>>}
  */
 export async function processSpreadImage(img, originalBlob = null, options = {}) {
@@ -331,7 +557,8 @@ export async function processSpreadImage(img, originalBlob = null, options = {})
         outputFormat = OUTPUT_FORMATS.ORIGINAL,
         quality = DEFAULT_JPEG_QUALITY,
         isUpscale = true,
-        mimeType = 'image/jpeg'
+        mimeType = 'image/jpeg',
+        isCropMarginsEnabled = true
     } = options;
 
     const isImgSpread = isSpread(img.width, img.height);
@@ -346,7 +573,8 @@ export async function processSpreadImage(img, originalBlob = null, options = {})
             mimeType,
             outputFormat,
             quality,
-            isUpscale
+            isUpscale,
+            isCropMarginsEnabled
         );
         return [{
             ...res,
@@ -373,7 +601,8 @@ export async function processSpreadImage(img, originalBlob = null, options = {})
             mimeType,
             outputFormat,
             quality,
-            isUpscale
+            isUpscale,
+            isCropMarginsEnabled
         );
         const res2 = await processImage(
             part2Canvas,
@@ -383,7 +612,8 @@ export async function processSpreadImage(img, originalBlob = null, options = {})
             mimeType,
             outputFormat,
             quality,
-            isUpscale
+            isUpscale,
+            isCropMarginsEnabled
         );
 
         const s1 = { ...res1, suffix: part1Suffix, type: PAGE_TYPES.SPREAD_PART_1 };
@@ -406,7 +636,8 @@ export async function processSpreadImage(img, originalBlob = null, options = {})
             mimeType,
             outputFormat,
             quality,
-            isUpscale
+            isUpscale,
+            isCropMarginsEnabled
         );
 
         return { ...res, suffix: '_spread', type: PAGE_TYPES.SPREAD_CENTER };
@@ -437,7 +668,8 @@ export async function processSpreadImage(img, originalBlob = null, options = {})
         mimeType,
         outputFormat,
         quality,
-        isUpscale
+        isUpscale,
+        isCropMarginsEnabled
     );
     return [{
         ...res,

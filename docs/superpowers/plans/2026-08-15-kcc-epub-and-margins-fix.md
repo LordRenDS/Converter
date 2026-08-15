@@ -47,11 +47,11 @@
 **Interfaces:**
 - Produces: `detectAndCropMargins(canvas, options)` and `AUTO_CROP_THRESHOLD` logic integrated into `processImage` and `processSpreadImage`.
 
-- [ ] **Step 1: Write/update unit tests in `test/test_image_processor.py` for margin crop and near-ratio fit**
-- [ ] **Step 2: Run test to verify it fails**
-- [ ] **Step 3: Implement `detectAndCropMargins` and `AUTO_CROP_THRESHOLD` in `src/js/modules/image-processor.js`**
-- [ ] **Step 4: Run test to verify it passes**
-- [ ] **Step 5: Commit changes**
+- [x] **Step 1: Write/update unit tests in `test/test_image_processor.py` for margin crop and near-ratio fit**
+- [x] **Step 2: Run test to verify it fails**
+- [x] **Step 3: Implement `detectAndCropMargins` and `AUTO_CROP_THRESHOLD` in `src/js/modules/image-processor.js`**
+- [x] **Step 4: Run test to verify it passes**
+- [x] **Step 5: Commit changes**
 
 ---
 

@@ -72,6 +72,20 @@ class TestImageProcessor(unittest.TestCase):
                 this.width = 0;
                 this.height = 0;
                 this._transforms = [];
+                this._pixels = null;
+            }
+            _ensurePixels() {
+                const len = (this.width || 1) * (this.height || 1) * 4;
+                if (!this._pixels || this._pixels.length !== len) {
+                    this._pixels = new Uint8ClampedArray(len);
+                    for (let i = 0; i < len; i += 4) {
+                        this._pixels[i] = 128;
+                        this._pixels[i + 1] = 128;
+                        this._pixels[i + 2] = 128;
+                        this._pixels[i + 3] = 255;
+                    }
+                }
+                return this._pixels;
             }
             getContext(type) {
                 const self = this;
@@ -80,20 +94,72 @@ class TestImageProcessor(unittest.TestCase):
                     rotate: (rad) => self._transforms.push({ op: 'rotate', rad }),
                     drawImage: (img, ...args) => {
                         self._drawn = { img, args };
+                        self._ensurePixels();
+                        if (img && img._pixels) {
+                            if (args.length === 8) {
+                                const [sx, sy, sw, sh, dx, dy, dw, dh] = args;
+                                for (let r = 0; r < dh; r++) {
+                                    for (let c = 0; c < dw; c++) {
+                                        const srcX = Math.floor(sx + (c / dw) * sw);
+                                        const srcY = Math.floor(sy + (r / dh) * sh);
+                                        const dstX = Math.floor(dx + c);
+                                        const dstY = Math.floor(dy + r);
+                                        if (dstX >= 0 && dstX < self.width && dstY >= 0 && dstY < self.height &&
+                                            srcX >= 0 && srcX < img.width && srcY >= 0 && srcY < img.height) {
+                                            const srcIdx = (srcY * img.width + srcX) * 4;
+                                            const dstIdx = (dstY * self.width + dstX) * 4;
+                                            for (let k = 0; k < 4; k++) {
+                                                self._pixels[dstIdx + k] = img._pixels[srcIdx + k];
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if (args.length === 4) {
+                                const [dx, dy, dw, dh] = args;
+                                for (let r = 0; r < dh; r++) {
+                                    for (let c = 0; c < dw; c++) {
+                                        const srcX = Math.floor((c / dw) * img.width);
+                                        const srcY = Math.floor((r / dh) * img.height);
+                                        const dstX = Math.floor(dx + c);
+                                        const dstY = Math.floor(dy + r);
+                                        if (dstX >= 0 && dstX < self.width && dstY >= 0 && dstY < self.height &&
+                                            srcX >= 0 && srcX < img.width && srcY >= 0 && srcY < img.height) {
+                                            const srcIdx = (srcY * img.width + srcX) * 4;
+                                            const dstIdx = (dstY * self.width + dstX) * 4;
+                                            for (let k = 0; k < 4; k++) {
+                                                self._pixels[dstIdx + k] = img._pixels[srcIdx + k];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     },
                     getImageData: (sx, sy, sw, sh) => {
+                        const pixels = self._ensurePixels();
                         const len = (sw || self.width || 1) * (sh || self.height || 1) * 4;
-                        const data = new Uint8ClampedArray(len);
-                        for (let i = 0; i < len; i += 4) {
-                            data[i] = 128;
-                            data[i + 1] = 128;
-                            data[i + 2] = 128;
-                            data[i + 3] = 255;
+                        if (sx === 0 && sy === 0 && (sw === self.width || !sw) && (sh === self.height || !sh)) {
+                            return { width: self.width, height: self.height, data: pixels };
                         }
-                        return { width: sw || self.width, height: sh || self.height, data };
+                        const subData = new Uint8ClampedArray(len);
+                        for (let r = 0; r < sh; r++) {
+                            for (let c = 0; c < sw; c++) {
+                                const srcX = sx + c;
+                                const srcY = sy + r;
+                                const dstIdx = (r * sw + c) * 4;
+                                if (srcX >= 0 && srcX < self.width && srcY >= 0 && srcY < self.height) {
+                                    const srcIdx = (srcY * self.width + srcX) * 4;
+                                    for (let k = 0; k < 4; k++) {
+                                        subData[dstIdx + k] = pixels[srcIdx + k];
+                                    }
+                                }
+                            }
+                        }
+                        return { width: sw, height: sh, data: subData };
                     },
                     putImageData: (imgData, dx, dy) => {
                         self._putData = { imgData, dx, dy };
+                        self._pixels = new Uint8ClampedArray(imgData.data);
                     }
                 };
             }
@@ -549,5 +615,297 @@ class TestImageProcessor(unittest.TestCase):
         self.assertEqual(res[1]['width'], 1272)
         self.assertEqual(res[1]['height'], 1272)
 
+    def test_detect_and_crop_margins_white_border(self):
+        code = f"""
+        {self.mock_env}
+        import {{ detectAndCropMargins }} from './src/js/modules/image-processor.js';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, 100, 100);
+        // Fill white (255)
+        for (let i = 0; i < imgData.data.length; i += 4) {{
+            imgData.data[i] = 255;
+            imgData.data[i + 1] = 255;
+            imgData.data[i + 2] = 255;
+            imgData.data[i + 3] = 255;
+        }}
+        // Draw black box (x=10..89, y=10..89)
+        for (let y = 10; y < 90; y++) {{
+            for (let x = 10; x < 90; x++) {{
+                const idx = (y * 100 + x) * 4;
+                imgData.data[idx] = 0;
+                imgData.data[idx + 1] = 0;
+                imgData.data[idx + 2] = 0;
+            }}
+        }}
+        ctx.putImageData(imgData, 0, 0);
+
+        const cropped = detectAndCropMargins(canvas);
+        console.log(JSON.stringify({{
+            width: cropped.width,
+            height: cropped.height
+        }}));
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 80)
+        self.assertEqual(res['height'], 80)
+
+    def test_detect_and_crop_margins_black_border(self):
+        code = f"""
+        {self.mock_env}
+        import {{ detectAndCropMargins }} from './src/js/modules/image-processor.js';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, 100, 100);
+        // Fill black (0)
+        for (let i = 0; i < imgData.data.length; i += 4) {{
+            imgData.data[i] = 0;
+            imgData.data[i + 1] = 0;
+            imgData.data[i + 2] = 0;
+            imgData.data[i + 3] = 255;
+        }}
+        // Draw white box (x=10..89, y=10..89)
+        for (let y = 10; y < 90; y++) {{
+            for (let x = 10; x < 90; x++) {{
+                const idx = (y * 100 + x) * 4;
+                imgData.data[idx] = 255;
+                imgData.data[idx + 1] = 255;
+                imgData.data[idx + 2] = 255;
+            }}
+        }}
+        ctx.putImageData(imgData, 0, 0);
+
+        const cropped = detectAndCropMargins(canvas);
+        console.log(JSON.stringify({{
+            width: cropped.width,
+            height: cropped.height
+        }}));
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 80)
+        self.assertEqual(res['height'], 80)
+
+    def test_detect_and_crop_margins_respects_max_crop_ratio(self):
+        code = f"""
+        {self.mock_env}
+        import {{ detectAndCropMargins }} from './src/js/modules/image-processor.js';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, 100, 100);
+        // Fill white (255)
+        for (let i = 0; i < imgData.data.length; i += 4) {{
+            imgData.data[i] = 255;
+            imgData.data[i + 1] = 255;
+            imgData.data[i + 2] = 255;
+            imgData.data[i + 3] = 255;
+        }}
+        // Draw black box with 30% margin on all sides (x=30..69, y=30..69)
+        for (let y = 30; y < 70; y++) {{
+            for (let x = 30; x < 70; x++) {{
+                const idx = (y * 100 + x) * 4;
+                imgData.data[idx] = 0;
+                imgData.data[idx + 1] = 0;
+                imgData.data[idx + 2] = 0;
+            }}
+        }}
+        ctx.putImageData(imgData, 0, 0);
+
+        // Default maxCropRatio is 0.10, so max 10px crop from each edge
+        const cropped = detectAndCropMargins(canvas);
+        console.log(JSON.stringify({{
+            width: cropped.width,
+            height: cropped.height
+        }}));
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 80)
+        self.assertEqual(res['height'], 80)
+
+    def test_detect_and_crop_margins_disabled(self):
+        code = f"""
+        {self.mock_env}
+        import {{ detectAndCropMargins }} from './src/js/modules/image-processor.js';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, 100, 100);
+        for (let i = 0; i < imgData.data.length; i += 4) {{
+            imgData.data[i] = 255;
+            imgData.data[i + 1] = 255;
+            imgData.data[i + 2] = 255;
+            imgData.data[i + 3] = 255;
+        }}
+        for (let y = 10; y < 90; y++) {{
+            for (let x = 10; x < 90; x++) {{
+                const idx = (y * 100 + x) * 4;
+                imgData.data[idx] = 0;
+                imgData.data[idx + 1] = 0;
+                imgData.data[idx + 2] = 0;
+            }}
+        }}
+        ctx.putImageData(imgData, 0, 0);
+
+        const cropped = detectAndCropMargins(canvas, {{ isCropMarginsEnabled: false }});
+        console.log(JSON.stringify({{
+            width: cropped.width,
+            height: cropped.height
+        }}));
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 100)
+        self.assertEqual(res['height'], 100)
+
+    def test_detect_and_crop_margins_uniform_image(self):
+        code = f"""
+        {self.mock_env}
+        import {{ detectAndCropMargins }} from './src/js/modules/image-processor.js';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, 100, 100);
+        for (let i = 0; i < imgData.data.length; i += 4) {{
+            imgData.data[i] = 255;
+            imgData.data[i + 1] = 255;
+            imgData.data[i + 2] = 255;
+            imgData.data[i + 3] = 255;
+        }}
+        ctx.putImageData(imgData, 0, 0);
+
+        const cropped = detectAndCropMargins(canvas);
+        console.log(JSON.stringify({{
+            width: cropped.width,
+            height: cropped.height
+        }}));
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 100)
+        self.assertEqual(res['height'], 100)
+
+    def test_process_image_near_aspect_ratio_fit_scaling(self):
+        code = f"""
+        {self.mock_env}
+        import {{ processImage }} from './src/js/modules/image-processor.js';
+
+        async function run() {{
+            // Kindle PW12: 1272x1696 (ratio 0.7500)
+            // 1250x1696 has ratio 0.7370, diff 0.013 < 0.02 AUTO_CROP_THRESHOLD -> fit mode
+            const img = new HTMLImageElement(1250, 1696);
+            const res = await processImage(
+                img,
+                null,
+                'kindle_pw12',
+                false,
+                'image/jpeg',
+                'original',
+                0.85,
+                true,
+                false // disable margin crop for this test
+            );
+            console.log(JSON.stringify({{
+                width: res.width,
+                height: res.height
+            }}));
+        }}
+        run();
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 1272)
+        self.assertEqual(res['height'], 1696)
+
+    def test_process_image_contain_scaling(self):
+        code = f"""
+        {self.mock_env}
+        import {{ processImage }} from './src/js/modules/image-processor.js';
+
+        async function run() {{
+            // Kindle PW12: 1272x1696 (ratio 0.7500)
+            // 1000x1696 has ratio 0.5896, diff 0.160 > 0.02 AUTO_CROP_THRESHOLD -> contain mode
+            const img = new HTMLImageElement(1000, 1696);
+            const res = await processImage(
+                img,
+                null,
+                'kindle_pw12',
+                false,
+                'image/jpeg',
+                'original',
+                0.85,
+                true,
+                false // disable margin crop for this test
+            );
+            console.log(JSON.stringify({{
+                width: res.width,
+                height: res.height
+            }}));
+        }}
+        run();
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 1000)
+        self.assertEqual(res['height'], 1696)
+
+    def test_process_image_with_auto_margin_crop_enabled(self):
+        code = f"""
+        {self.mock_env}
+        import {{ processImage }} from './src/js/modules/image-processor.js';
+
+        async function run() {{
+            const canvas = document.createElement('canvas');
+            canvas.width = 100;
+            canvas.height = 100;
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.getImageData(0, 0, 100, 100);
+            for (let i = 0; i < imgData.data.length; i += 4) {{
+                imgData.data[i] = 255;
+                imgData.data[i + 1] = 255;
+                imgData.data[i + 2] = 255;
+                imgData.data[i + 3] = 255;
+            }}
+            for (let y = 10; y < 90; y++) {{
+                for (let x = 10; x < 90; x++) {{
+                    const idx = (y * 100 + x) * 4;
+                    imgData.data[idx] = 0;
+                    imgData.data[idx + 1] = 0;
+                    imgData.data[idx + 2] = 0;
+                }}
+            }}
+            ctx.putImageData(imgData, 0, 0);
+
+            // Default isCropMarginsEnabled = true
+            const res = await processImage(
+                canvas,
+                null,
+                false, // no target device
+                false,
+                'image/jpeg',
+                'original',
+                0.85,
+                true,
+                true // isCropMarginsEnabled
+            );
+            console.log(JSON.stringify({{
+                width: res.width,
+                height: res.height
+            }}));
+        }}
+        run();
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 80)
+        self.assertEqual(res['height'], 80)
+
 if __name__ == '__main__':
     unittest.main()
+
