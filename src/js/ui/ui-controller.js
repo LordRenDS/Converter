@@ -44,6 +44,7 @@ export class UIController {
         this.mergeCheckbox = document.getElementById('merge-checkbox');
         this.qualityGroup = document.getElementById('quality-group');
         this.qualityInputEl = document.getElementById('quality-input');
+        this.cropMarginsCheckbox = document.getElementById('crop-margins-checkbox');
         this.landscapeSpreadCheckbox = document.getElementById('landscape-spread-checkbox');
         this.offsetFirstPageCheckbox = document.getElementById('offset-first-page-checkbox');
     }
@@ -260,6 +261,7 @@ export class UIController {
         const targetDevice = getDevicePreset(selectedDeviceId);
         const isUpscaleEnabled = this.upscaleCheckbox ? this.upscaleCheckbox.checked : true;
         const isGrayscaleEnabled = this.grayscaleCheckbox ? this.grayscaleCheckbox.checked : false;
+        const isCropMarginsEnabled = this.cropMarginsCheckbox ? this.cropMarginsCheckbox.checked : true;
         const isLandscapeSpread = this.landscapeSpreadCheckbox ? this.landscapeSpreadCheckbox.checked : false;
         const isOffsetFirstPage = this.offsetFirstPageCheckbox ? this.offsetFirstPageCheckbox.checked : false;
 
@@ -300,6 +302,7 @@ export class UIController {
                     isUpscaleEnabled,
                     isGrayscaleEnabled,
                     jpegQuality,
+                    isCropMarginsEnabled,
                     isLandscapeSpread,
                     isOffsetFirstPage,
                     onProgress: (percent) => this.setProgress(percent, 'Merging and creating EPUB...')
@@ -339,6 +342,7 @@ export class UIController {
                         isUpscaleEnabled,
                         isGrayscaleEnabled,
                         jpegQuality,
+                        isCropMarginsEnabled,
                         isLandscapeSpread,
                         isOffsetFirstPage,
                         onProgress: (percent) => this.setProgress(percent, `Processing file ${i + 1}/${this.currentFiles.length}...`)
