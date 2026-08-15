@@ -906,6 +906,104 @@ class TestImageProcessor(unittest.TestCase):
         self.assertEqual(res['width'], 80)
         self.assertEqual(res['height'], 80)
 
+    def test_process_image_grayscale_filter_support(self):
+        code = f"""
+        {self.mock_env}
+        const originalGetContext = globalThis.HTMLCanvasElement.prototype.getContext;
+        const filterEvents = [];
+        let finalFilterState = null;
+        let getImageDataCallCount = 0;
+
+        globalThis.HTMLCanvasElement.prototype.getContext = function(type) {{
+            const ctx = originalGetContext.call(this, type);
+            ctx.filter = 'none';
+            const origDrawImage = ctx.drawImage;
+            ctx.drawImage = function(...args) {{
+                filterEvents.push(ctx.filter);
+                return origDrawImage.apply(this, args);
+            }};
+            const origGetImageData = ctx.getImageData;
+            ctx.getImageData = function(...args) {{
+                getImageDataCallCount++;
+                return origGetImageData.apply(this, args);
+            }};
+            return ctx;
+        }};
+
+        import {{ processImage }} from './src/js/modules/image-processor.js';
+
+        async function run() {{
+            const img = new HTMLImageElement(100, 100);
+            const res = await processImage(
+                img,
+                null,
+                false,
+                true, // isGrayscale
+                'image/jpeg',
+                'original',
+                0.85,
+                true,
+                false // disable margin crop for this test
+            );
+            console.log(JSON.stringify({{
+                filterEvents: filterEvents,
+                getImageDataCallCount: getImageDataCallCount,
+                width: res.width,
+                height: res.height
+            }}));
+        }}
+        run();
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['filterEvents'], ['grayscale(100%)'])
+        self.assertEqual(res['getImageDataCallCount'], 0)
+        self.assertEqual(res['width'], 100)
+        self.assertEqual(res['height'], 100)
+
+    def test_detect_and_crop_margins_asymmetric(self):
+        code = f"""
+        {self.mock_env}
+        import {{ detectAndCropMargins }} from './src/js/modules/image-processor.js';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = 100;
+        canvas.height = 100;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, 100, 100);
+        // Fill white (255)
+        for (let i = 0; i < imgData.data.length; i += 4) {{
+            imgData.data[i] = 255;
+            imgData.data[i + 1] = 255;
+            imgData.data[i + 2] = 255;
+            imgData.data[i + 3] = 255;
+        }}
+        // Content from top=5, bottom=95, left=0, right=85 (x=0..84, y=5..94)
+        for (let y = 5; y < 95; y++) {{
+            for (let x = 0; x < 85; x++) {{
+                const idx = (y * 100 + x) * 4;
+                imgData.data[idx] = 0;
+                imgData.data[idx + 1] = 0;
+                imgData.data[idx + 2] = 0;
+            }}
+        }}
+        ctx.putImageData(imgData, 0, 0);
+
+        // maxCropRatio is 0.10:
+        // top: content at 5 (< 10) -> top=5
+        // bottom: content at 95 (>= 90) -> bottom=95
+        // left: content at 0 -> left=0
+        // right: content at 85 (< 90) -> right clamped to minRight = 90
+        const cropped = detectAndCropMargins(canvas);
+        console.log(JSON.stringify({{
+            width: cropped.width,
+            height: cropped.height
+        }}));
+        """
+        res = run_js_eval(code)
+        self.assertEqual(res['width'], 90)
+        self.assertEqual(res['height'], 90)
+
 if __name__ == '__main__':
     unittest.main()
+
 

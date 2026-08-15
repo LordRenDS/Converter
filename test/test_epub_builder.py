@@ -1031,12 +1031,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertIn('<meta name="dtb:maxPageNumber" content="0"/>', ncx)
         self.assertIn('<meta name="generated" content="true"/>', ncx)
         self.assertIn('<docTitle><text>TOC NCX Test &amp; Adventure</text></docTitle>', ncx)
-        self.assertIn('<navPoint id="page0">', ncx)
-        self.assertIn('<navLabel><text>Page 0</text></navLabel>', ncx)
+        self.assertIn('<navPoint id="navPoint-1">', ncx)
+        self.assertIn('<navLabel><text>TOC NCX Test &amp; Adventure</text></navLabel>', ncx)
         self.assertIn('<content src="Text/page_0000.xhtml"/>', ncx)
-        self.assertIn('<navPoint id="page1">', ncx)
-        self.assertIn('<navLabel><text>Page 1</text></navLabel>', ncx)
-        self.assertIn('<content src="Text/page_0001.xhtml"/>', ncx)
+        self.assertNotIn('navPoint-2', ncx)
 
     def test_epub_container_nav_xhtml_structure(self):
         code = self.base_env + r"""
@@ -1065,11 +1063,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertIn('<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">', nav)
         self.assertIn('<title>NAV XHTML Test</title>', nav)
         self.assertIn('<nav epub:type="toc" id="toc">', nav)
-        self.assertIn('<li><a href="Text/page_0000.xhtml">Page 0</a></li>', nav)
-        self.assertIn('<li><a href="Text/page_0001.xhtml">Page 1</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0000.xhtml">NAV XHTML Test</a></li>', nav)
         self.assertIn('<nav epub:type="page-list">', nav)
-        self.assertIn('<li><a href="Text/page_0000.xhtml">Page 0</a></li>', nav)
-        self.assertIn('<li><a href="Text/page_0001.xhtml">Page 1</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0000.xhtml">1</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0001.xhtml">2</a></li>', nav)
 
     def test_epub_container_custom_cover_in_ncx_and_nav(self):
         code = self.base_env + r"""
@@ -1098,10 +1095,143 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         data = run_js_eval(code)
         ncx = data['ncx']
         nav = data['nav']
-        self.assertIn('<navPoint id="cover-page">', ncx)
-        self.assertIn('<navLabel><text>Cover</text></navLabel>', ncx)
+        self.assertIn('<navPoint id="navPoint-1">', ncx)
+        self.assertIn('<navLabel><text>Cover Nav Test</text></navLabel>', ncx)
         self.assertIn('<content src="Text/cover.xhtml"/>', ncx)
-        self.assertIn('<li><a href="Text/cover.xhtml">Cover</a></li>', nav)
+        self.assertIn('<li><a href="Text/cover.xhtml">Cover Nav Test</a></li>', nav)
+        self.assertIn('<li><a href="Text/cover.xhtml">1</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0000.xhtml">2</a></li>', nav)
+
+    def test_epub_chapters_toc_generation(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockImages = [
+            { name: '01.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) },
+            { name: 'spread.jpg', async: async () => new globalThis.Blob([], { width: 2000, height: 1000 }) },
+            { name: '03.jpg', async: async () => new globalThis.Blob([], { width: 1000, height: 1500 }) }
+        ];
+
+        const chapters = [
+            { title: 'Chapter 1: The Beginning', startIndex: 0 },
+            { title: 'Chapter 2: The Journey', startIndex: 2 }
+        ];
+
+        await createEpub({
+            images: mockImages,
+            chapters,
+            title: 'Manga Adventure',
+            author: 'Mangaka',
+            isOptimizeEnabled: true,
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        const ncx = files['OEBPS/toc.ncx'];
+        const nav = files['OEBPS/nav.xhtml'];
+        console.log(JSON.stringify({ ncx, nav }));
+        """
+        data = run_js_eval(code)
+        ncx = data['ncx']
+        nav = data['nav']
+
+        # NCX checks
+        self.assertIn('<navPoint id="navPoint-1">', ncx)
+        self.assertIn('<navLabel><text>Chapter 1: The Beginning</text></navLabel>', ncx)
+        self.assertIn('<content src="Text/page_0000.xhtml"/>', ncx)
+
+        self.assertIn('<navPoint id="navPoint-2">', ncx)
+        self.assertIn('<navLabel><text>Chapter 2: The Journey</text></navLabel>', ncx)
+        self.assertIn('<content src="Text/page_0003.xhtml"/>', ncx)
+
+        # Nav checks
+        self.assertIn('<li><a href="Text/page_0000.xhtml">Chapter 1: The Beginning</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0003.xhtml">Chapter 2: The Journey</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0000.xhtml">1</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0001.xhtml">2</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0002.xhtml">3</a></li>', nav)
+        self.assertIn('<li><a href="Text/page_0003.xhtml">4</a></li>', nav)
+
+    def test_epub_batch_concurrency_order_preservation(self):
+        code = self.base_env + r"""
+        const { zip, files } = createMockZip();
+        const mockImages = Array.from({ length: 9 }, (_, i) => ({
+            name: `p_${i + 1}.jpg`,
+            async: async () => new globalThis.Blob([], { width: 1000, height: 1500 })
+        }));
+
+        await createEpub({
+            images: mockImages,
+            title: 'Concurrency Order Check',
+            author: 'Tester',
+            jszipLib: class { constructor() { return zip; } }
+        });
+
+        const pages = [];
+        for (let i = 0; i < 9; i++) {
+            const pad = i.toString().padStart(4, '0');
+            pages.push(files[`OEBPS/Text/page_${pad}.xhtml`]);
+        }
+        console.log(JSON.stringify({ pagesFound: pages.map(p => !!p), pageCount: pages.length }));
+        """
+        data = run_js_eval(code)
+        self.assertEqual(data['pageCount'], 9)
+        self.assertTrue(all(data['pagesFound']))
+
+    def test_cbz_reader_chapter_extraction(self):
+        code = r"""
+        import { extractImagesFromCbz } from './src/js/modules/cbz-reader.js';
+
+        const mockSubdirEntries = [
+            { name: 'Chapter 2/01.jpg', dir: false },
+            { name: 'Chapter 1/02.jpg', dir: false },
+            { name: 'Chapter 1/01.jpg', dir: false },
+            { name: 'Chapter 2/02.jpg', dir: false }
+        ];
+
+        const MockZip1 = class {
+            async loadAsync() {
+                return {
+                    forEach: (cb) => mockSubdirEntries.forEach(e => cb(e.name, e))
+                };
+            }
+        };
+
+        const resSubdir = await extractImagesFromCbz(new globalThis.Blob(['']), MockZip1);
+
+        const mockFlatEntries = [
+            { name: '02.jpg', dir: false },
+            { name: '01.jpg', dir: false }
+        ];
+
+        const MockZip2 = class {
+            async loadAsync() {
+                return {
+                    forEach: (cb) => mockFlatEntries.forEach(e => cb(e.name, e))
+                };
+            }
+        };
+
+        const resFlat = await extractImagesFromCbz(new globalThis.Blob(['']), MockZip2);
+
+        console.log(JSON.stringify({
+            subdirChapters: resSubdir.chapters,
+            subdirFiles: resSubdir.map(e => e.name),
+            flatChapters: resFlat.chapters,
+            flatFiles: resFlat.map(e => e.name)
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertEqual(data['subdirChapters'], [
+            {'title': 'Chapter 1', 'startIndex': 0},
+            {'title': 'Chapter 2', 'startIndex': 2}
+        ])
+        self.assertEqual(data['subdirFiles'], [
+            'Chapter 1/01.jpg',
+            'Chapter 1/02.jpg',
+            'Chapter 2/01.jpg',
+            'Chapter 2/02.jpg'
+        ])
+        self.assertEqual(data['flatChapters'], [])
+        self.assertEqual(data['flatFiles'], ['01.jpg', '02.jpg'])
 
     def test_index_html_device_options(self):
         index_path = REPO_ROOT / 'index.html'

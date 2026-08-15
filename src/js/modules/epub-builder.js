@@ -17,16 +17,25 @@ export function getSpineDirectionAttribute(direction) {
  * Builds the NCX Table of Contents (EPUB 2 / Kindle).
  * @param {Object} options
  * @param {string} options.title
- * @param {string} options.bookUuid
- * @param {Array<{id: string, pageName: string, title?: string}>} options.pages
+ * @param {string} [options.bookUuid]
+ * @param {Array<{id?: string, pageName: string, title?: string}>} [options.chapters]
+ * @param {Array<{id?: string, pageName: string, title?: string}>} [options.pages]
  * @returns {string}
  */
-export function buildNcx({ title = 'Untitled', bookUuid = '12345-67890', pages = [] }) {
+export function buildNcx({ title = 'Untitled', bookUuid = '12345-67890', chapters = [], pages = [] }) {
     const safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const navPoints = pages.map((page, index) => {
-        const safePageTitle = (page.title || `Page ${index}`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const navId = page.id || `navPoint-${index + 1}`;
-        return `    <navPoint id="${navId}">\n      <navLabel><text>${safePageTitle}</text></navLabel>\n      <content src="Text/${page.pageName}"/>\n    </navPoint>`;
+    const items = (chapters && chapters.length > 0)
+        ? chapters
+        : (pages && pages.length > 0
+            ? [{ id: 'navPoint-1', title, pageName: pages[0].pageName }]
+            : [{ id: 'navPoint-1', title, pageName: 'page_0000.xhtml' }]);
+
+    const navPoints = items.map((item, index) => {
+        const itemTitle = item.title || `Chapter ${index + 1}`;
+        const safePageTitle = itemTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const navId = item.id || `navPoint-${index + 1}`;
+        const src = item.pageName.startsWith('Text/') ? item.pageName : `Text/${item.pageName}`;
+        return `    <navPoint id="${navId}">\n      <navLabel><text>${safePageTitle}</text></navLabel>\n      <content src="${src}"/>\n    </navPoint>`;
     }).join('\n');
 
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -49,14 +58,28 @@ ${navPoints}
  * Builds the EPUB 3 Navigation Document (nav.xhtml).
  * @param {Object} options
  * @param {string} options.title
- * @param {Array<{pageName: string, title?: string}>} options.pages
+ * @param {Array<{pageName: string, title?: string}>} [options.chapters]
+ * @param {Array<{pageName: string, title?: string}>} [options.pages]
  * @returns {string}
  */
-export function buildNav({ title = 'Untitled', pages = [] }) {
+export function buildNav({ title = 'Untitled', chapters = [], pages = [] }) {
     const safeTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const listItems = pages.map((page, index) => {
-        const safePageTitle = (page.title || `Page ${index}`).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return `      <li><a href="Text/${page.pageName}">${safePageTitle}</a></li>`;
+    const items = (chapters && chapters.length > 0)
+        ? chapters
+        : (pages && pages.length > 0
+            ? [{ title, pageName: pages[0].pageName }]
+            : [{ title, pageName: 'page_0000.xhtml' }]);
+
+    const tocListItems = items.map((item, index) => {
+        const itemTitle = item.title || `Chapter ${index + 1}`;
+        const safePageTitle = itemTitle.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const src = item.pageName.startsWith('Text/') ? item.pageName : `Text/${item.pageName}`;
+        return `      <li><a href="${src}">${safePageTitle}</a></li>`;
+    }).join('\n');
+
+    const pageListItems = pages.map((page, index) => {
+        const src = page.pageName.startsWith('Text/') ? page.pageName : `Text/${page.pageName}`;
+        return `      <li><a href="${src}">${index + 1}</a></li>`;
     }).join('\n');
 
     return `<?xml version="1.0" encoding="utf-8"?>
@@ -69,12 +92,12 @@ export function buildNav({ title = 'Untitled', pages = [] }) {
 <body>
   <nav epub:type="toc" id="toc">
     <ol>
-${listItems}
+${tocListItems}
     </ol>
   </nav>
   <nav epub:type="page-list">
     <ol>
-${listItems}
+${pageListItems}
     </ol>
   </nav>
 </body>
@@ -85,6 +108,7 @@ ${listItems}
  * Creates an EPUB 3 Blob from a list of image entries and settings.
  * @param {Object} options
  * @param {Array<import('jszip').JSZipObject>} options.images
+ * @param {Array<{title: string, startIndex?: number, pageName?: string}>} [options.chapters=[]]
  * @param {string} options.title
  * @param {string} options.author
  * @param {boolean} [options.isOptimizeEnabled=false]
@@ -111,6 +135,7 @@ ${listItems}
  */
 export async function createEpub({
     images,
+    chapters = [],
     title = 'Untitled',
     author = 'Unknown Author',
     isOptimizeEnabled = false,
@@ -225,70 +250,86 @@ body {
         spinePages.push({ id: coverPageId, type: PAGE_TYPES.NORMAL });
     }
 
-    // Process images
-    for (let i = 0; i < images.length; i++) {
-        const imgData = images[i];
-        const blobData = await imgData.async('blob');
-        const img = await blobToImage(blobData);
+    // Process images in concurrent batches while preserving order
+    const BATCH_SIZE = 4;
+    const inputImageToPageName = [];
 
-        const processedImages = await processSpreadImage(img, blobData, {
-            spreadMode: effectiveSpreadMode,
-            readingDirection,
-            noRotate: spreadNoRotate,
-            rotateRight: spreadRotateRight,
-            spreadPosition,
-            targetDeviceOrFit: effectiveDevice,
-            isGrayscale: isGrayscaleEnabled,
-            outputFormat,
-            quality: jpegQuality,
-            isUpscale: isUpscaleEnabled,
-            isCropMarginsEnabled
-        });
+    for (let b = 0; b < images.length; b += BATCH_SIZE) {
+        const batch = images.slice(b, b + BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(async (imgData) => {
+            const blobData = await imgData.async('blob');
+            const img = await blobToImage(blobData);
 
-        for (const procImg of processedImages) {
-            if (procImg.width > maxWidth) maxWidth = procImg.width;
-            if (procImg.height > maxHeight) maxHeight = procImg.height;
+            return processSpreadImage(img, blobData, {
+                spreadMode: effectiveSpreadMode,
+                readingDirection,
+                noRotate: spreadNoRotate,
+                rotateRight: spreadRotateRight,
+                spreadPosition,
+                targetDeviceOrFit: effectiveDevice,
+                isGrayscale: isGrayscaleEnabled,
+                outputFormat,
+                quality: jpegQuality,
+                isUpscale: isUpscaleEnabled,
+                isCropMarginsEnabled
+            });
+        }));
 
-            const imgName = `image_${globalImageCounter.toString().padStart(4, '0')}${procImg.suffix}.${procImg.ext}`;
-            imagesFolder.file(imgName, procImg.blob);
+        for (let itemIdx = 0; itemIdx < batchResults.length; itemIdx++) {
+            const inputIndex = b + itemIdx;
+            const processedImages = batchResults[itemIdx];
+            let firstPageNameForInput = null;
 
-            const id = `img${globalImageCounter}`;
-            let properties = '';
+            for (const procImg of processedImages) {
+                if (procImg.width > maxWidth) maxWidth = procImg.width;
+                if (procImg.height > maxHeight) maxHeight = procImg.height;
 
-            if (coverSource === COVER_SOURCES.PAGE && globalImageCounter === (coverPageNumber - 1)) {
-                properties = ' properties="cover-image"';
-                coverId = id;
+                const imgName = `image_${globalImageCounter.toString().padStart(4, '0')}${procImg.suffix}.${procImg.ext}`;
+                imagesFolder.file(imgName, procImg.blob);
+
+                const id = `img${globalImageCounter}`;
+                let properties = '';
+
+                if (coverSource === COVER_SOURCES.PAGE && globalImageCounter === (coverPageNumber - 1)) {
+                    properties = ' properties="cover-image"';
+                    coverId = id;
+                }
+
+                const mediaType = procImg.mimeType.startsWith('image/')
+                    ? procImg.mimeType
+                    : `image/${procImg.mimeType}`;
+
+                manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="${mediaType}"${properties}/>\n`;
+
+                const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
+                const pageId = `page${globalImageCounter}`;
+
+                if (firstPageNameForInput === null) {
+                    firstPageNameForInput = pageName;
+                }
+
+                const spineIndex = spinePages.length;
+                spinePages.push({ id: pageId, type: procImg.type });
+
+                pagesToGenerate.push({
+                    pageName,
+                    pageId,
+                    spineIndex,
+                    title: `Page ${globalImageCounter}`,
+                    width: procImg.width,
+                    height: procImg.height,
+                    imgName,
+                    globalImageCounter
+                });
+
+                globalImageCounter++;
             }
 
-            const mediaType = procImg.mimeType.startsWith('image/')
-                ? procImg.mimeType
-                : `image/${procImg.mimeType}`;
-
-            manifestItems += `<item id="${id}" href="Images/${imgName}" media-type="${mediaType}"${properties}/>\n`;
-
-            const pageName = `page_${globalImageCounter.toString().padStart(4, '0')}.xhtml`;
-            const pageId = `page${globalImageCounter}`;
-
-            const spineIndex = spinePages.length;
-            spinePages.push({ id: pageId, type: procImg.type });
-
-            pagesToGenerate.push({
-                pageName,
-                pageId,
-                spineIndex,
-                title: `Page ${globalImageCounter}`,
-                width: procImg.width,
-                height: procImg.height,
-                imgName,
-                globalImageCounter
-            });
-
-            globalImageCounter++;
+            inputImageToPageName[inputIndex] = firstPageNameForInput || 'page_0000.xhtml';
         }
 
-        if (i % 5 === 0) {
-            onProgress(40 + (i / images.length) * 40);
-        }
+        const currentCount = Math.min(b + BATCH_SIZE, images.length);
+        onProgress(40 + (currentCount / images.length) * 40);
     }
 
     onProgress(85);
@@ -354,10 +395,26 @@ body {
         navPages.push({ id: page.pageId, pageName: page.pageName, title: page.title });
     }
 
-    const ncxContent = buildNcx({ title, bookUuid, pages: navPages });
+    const tocChapters = (chapters && chapters.length > 0)
+        ? chapters.map((ch, idx) => {
+            const chObj = typeof ch === 'string' ? { title: ch, startIndex: idx } : ch;
+            const pageName = chObj.pageName || (chObj.startIndex !== undefined ? inputImageToPageName[chObj.startIndex] : undefined) || (navPages[0]?.pageName || 'page_0000.xhtml');
+            return {
+                id: `navPoint-${idx + 1}`,
+                title: chObj.title || `Chapter ${idx + 1}`,
+                pageName
+            };
+        })
+        : [{
+            id: 'navPoint-1',
+            title,
+            pageName: navPages.length > 0 ? navPages[0].pageName : 'page_0000.xhtml'
+        }];
+
+    const ncxContent = buildNcx({ title, bookUuid, chapters: tocChapters, pages: navPages });
     oebps.file('toc.ncx', ncxContent);
 
-    const navContent = buildNav({ title, pages: navPages });
+    const navContent = buildNav({ title, chapters: tocChapters, pages: navPages });
     oebps.file('nav.xhtml', navContent);
 
     const contentOpf = `<?xml version="1.0" encoding="utf-8"?>

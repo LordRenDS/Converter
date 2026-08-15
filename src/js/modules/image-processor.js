@@ -214,10 +214,15 @@ export function detectAndCropMargins(canvasOrImg, options = {}) {
     const rowNoiseMin = noiseThreshold * width;
     const colNoiseMin = noiseThreshold * height;
 
-    // Scan top
-    let detectedTop = 0;
+    const maxTop = Math.floor(height * maxCropRatio);
+    const maxLeft = Math.floor(width * maxCropRatio);
+    const minBottom = Math.ceil(height * (1 - maxCropRatio));
+    const minRight = Math.ceil(width * (1 - maxCropRatio));
+
+    // Scan top within maximum margin area
+    let detectedTop = maxTop;
     let foundTop = false;
-    for (let y = 0; y < height; y++) {
+    for (let y = 0; y <= maxTop && y < height; y++) {
         let count = 0;
         for (let x = 0; x < width; x++) {
             if (isContentPixel(x, y)) {
@@ -232,14 +237,10 @@ export function detectAndCropMargins(canvasOrImg, options = {}) {
         if (foundTop) break;
     }
 
-    if (!foundTop) {
-        return canvasOrImg;
-    }
-
-    // Scan bottom
-    let detectedBottom = height;
+    // Scan bottom within maximum margin area
+    let detectedBottom = minBottom;
     let foundBottom = false;
-    for (let y = height - 1; y >= 0; y--) {
+    for (let y = height - 1; y >= minBottom && y >= 0; y--) {
         let count = 0;
         for (let x = 0; x < width; x++) {
             if (isContentPixel(x, y)) {
@@ -254,10 +255,10 @@ export function detectAndCropMargins(canvasOrImg, options = {}) {
         if (foundBottom) break;
     }
 
-    // Scan left
-    let detectedLeft = 0;
+    // Scan left within maximum margin area
+    let detectedLeft = maxLeft;
     let foundLeft = false;
-    for (let x = 0; x < width; x++) {
+    for (let x = 0; x <= maxLeft && x < width; x++) {
         let count = 0;
         for (let y = 0; y < height; y++) {
             if (isContentPixel(x, y)) {
@@ -272,10 +273,10 @@ export function detectAndCropMargins(canvasOrImg, options = {}) {
         if (foundLeft) break;
     }
 
-    // Scan right
-    let detectedRight = width;
+    // Scan right within maximum margin area
+    let detectedRight = minRight;
     let foundRight = false;
-    for (let x = width - 1; x >= 0; x--) {
+    for (let x = width - 1; x >= minRight && x >= 0; x--) {
         let count = 0;
         for (let y = 0; y < height; y++) {
             if (isContentPixel(x, y)) {
@@ -290,16 +291,30 @@ export function detectAndCropMargins(canvasOrImg, options = {}) {
         if (foundRight) break;
     }
 
-    const maxLeft = Math.floor(width * maxCropRatio);
+    // If no content found on any edge, check if image is entirely blank/uniform
+    if (!foundTop && !foundBottom && !foundLeft && !foundRight) {
+        let hasContent = false;
+        for (let y = maxTop + 1; y < minBottom; y++) {
+            let count = 0;
+            for (let x = 0; x < width; x++) {
+                if (isContentPixel(x, y)) {
+                    count++;
+                    if (count > rowNoiseMin) {
+                        hasContent = true;
+                        break;
+                    }
+                }
+            }
+            if (hasContent) break;
+        }
+        if (!hasContent) {
+            return canvasOrImg;
+        }
+    }
+
     const left = Math.min(detectedLeft, maxLeft);
-
-    const maxTop = Math.floor(height * maxCropRatio);
     const top = Math.min(detectedTop, maxTop);
-
-    const minRight = Math.ceil(width * (1 - maxCropRatio));
     const right = Math.max(detectedRight, minRight);
-
-    const minBottom = Math.ceil(height * (1 - maxCropRatio));
     const bottom = Math.max(detectedBottom, minBottom);
 
     if (left >= right || top >= bottom || (left === 0 && top === 0 && right === width && bottom === height)) {
@@ -437,13 +452,28 @@ export async function processImage(
         if ('imageSmoothingQuality' in ctx) {
             ctx.imageSmoothingQuality = 'high';
         }
+
+        const isStandardGrayscale = isGrayscale &&
+            outputFormat !== OUTPUT_FORMATS.PNG_4BIT &&
+            outputFormat !== OUTPUT_FORMATS.PNG_8BIT;
+
+        const supportsFilter = isStandardGrayscale && ctx.filter !== undefined;
+
+        if (supportsFilter) {
+            ctx.filter = 'grayscale(100%)';
+        }
+
         if (isFitMode && drawParams) {
             ctx.drawImage(currentImg, drawParams.dx, drawParams.dy, drawParams.dw, drawParams.dh);
         } else {
             ctx.drawImage(currentImg, 0, 0, width, height);
         }
 
-        if (isGrayscale && outputFormat !== OUTPUT_FORMATS.PNG_4BIT && outputFormat !== OUTPUT_FORMATS.PNG_8BIT) {
+        if (supportsFilter) {
+            ctx.filter = 'none';
+        }
+
+        if (isStandardGrayscale && !supportsFilter) {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
             for (let i = 0; i < data.length; i += 4) {

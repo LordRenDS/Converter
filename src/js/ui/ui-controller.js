@@ -272,9 +272,29 @@ export class UIController {
             if (isMergeMode) {
                 this.setProgress(5, 'Merging files: Reading all images...');
                 let allImages = [];
+                const chapters = [];
                 for (let i = 0; i < this.currentFiles.length; i++) {
-                    const imgs = await extractImagesFromCbz(this.currentFiles[i]);
-                    allImages = allImages.concat(imgs);
+                    const file = this.currentFiles[i];
+                    const fileBaseName = file.name.replace(/\.[^/.]+$/, '');
+                    const startIndex = allImages.length;
+                    const imgs = await extractImagesFromCbz(file);
+
+                    if (imgs.length > 0) {
+                        if (imgs.chapters && imgs.chapters.length > 0) {
+                            for (const ch of imgs.chapters) {
+                                chapters.push({
+                                    title: ch.title,
+                                    startIndex: startIndex + ch.startIndex
+                                });
+                            }
+                        } else {
+                            chapters.push({
+                                title: fileBaseName,
+                                startIndex
+                            });
+                        }
+                        allImages = allImages.concat(imgs);
+                    }
                     this.setProgress(5 + (i / this.currentFiles.length) * 20, `Reading file ${i + 1}/${this.currentFiles.length}...`);
                 }
 
@@ -282,11 +302,14 @@ export class UIController {
                     throw new Error('No images found in the selected archives.');
                 }
 
+                allImages.chapters = chapters;
+
                 const finalTitle = globalTitle || this.currentFiles[0].name.replace(/\.[^/.]+$/, '');
                 this.setProgress(30, `Processing ${allImages.length} total images...`);
 
                 const epubBlob = await createEpub({
                     images: allImages,
+                    chapters,
                     title: finalTitle,
                     author: globalAuthor,
                     spreadMode,
@@ -327,6 +350,7 @@ export class UIController {
 
                     const epubBlob = await createEpub({
                         images,
+                        chapters: images.chapters || [],
                         title: finalTitle,
                         author: globalAuthor,
                         spreadMode,

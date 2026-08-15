@@ -1,5 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { getSpineDirectionAttribute, createEpub } from '../src/js/modules/epub-builder.js';
+import { getSpineDirectionAttribute, createEpub, buildNcx, buildNav } from '../src/js/modules/epub-builder.js';
 import { READING_DIRECTIONS, COVER_SOURCES } from '../src/js/modules/constants.js';
 
 function createMockBlob({ width = 1000, height = 1500, type = 'image/jpeg' } = {}) {
@@ -581,6 +581,118 @@ describe('epub-builder module', () => {
             expect(coverPage).toContain('<link href="style.css" type="text/css" rel="stylesheet"/>');
             expect(coverPage).toContain('<div style="text-align:center;">');
             expect(coverPage).toContain('<div style="display:none;">.</div>');
+        });
+    });
+
+    describe('Table of Contents and Chapter navigation', () => {
+        it('should build Ncx and Nav with single book entry when no chapters provided', () => {
+            const ncx = buildNcx({
+                title: 'Solo & Book',
+                bookUuid: 'uuid-123',
+                pages: [{ pageName: 'page_0000.xhtml' }, { pageName: 'page_0001.xhtml' }]
+            });
+            expect(ncx).toContain('<docTitle><text>Solo &amp; Book</text></docTitle>');
+            expect(ncx).toContain('<navPoint id="navPoint-1">');
+            expect(ncx).toContain('<navLabel><text>Solo &amp; Book</text></navLabel>');
+            expect(ncx).toContain('<content src="Text/page_0000.xhtml"/>');
+            expect(ncx).not.toContain('navPoint-2');
+
+            const nav = buildNav({
+                title: 'Solo & Book',
+                pages: [{ pageName: 'page_0000.xhtml' }, { pageName: 'page_0001.xhtml' }]
+            });
+            expect(nav).toContain('<nav epub:type="toc" id="toc">');
+            expect(nav).toContain('<li><a href="Text/page_0000.xhtml">Solo &amp; Book</a></li>');
+            expect(nav).toContain('<nav epub:type="page-list">');
+            expect(nav).toContain('<li><a href="Text/page_0000.xhtml">1</a></li>');
+            expect(nav).toContain('<li><a href="Text/page_0001.xhtml">2</a></li>');
+        });
+
+        it('should build Ncx and Nav with multiple chapter entries when chapters are provided', () => {
+            const chapters = [
+                { id: 'ch-1', title: 'Chapter 1: Intro', pageName: 'page_0000.xhtml' },
+                { id: 'ch-2', title: 'Chapter 2: Climax', pageName: 'page_0005.xhtml' }
+            ];
+            const pages = [
+                { pageName: 'page_0000.xhtml' },
+                { pageName: 'page_0001.xhtml' },
+                { pageName: 'page_0005.xhtml' }
+            ];
+
+            const ncx = buildNcx({ title: 'Manga Vol 1', bookUuid: 'uuid-123', chapters, pages });
+            expect(ncx).toContain('<navPoint id="ch-1">');
+            expect(ncx).toContain('<navLabel><text>Chapter 1: Intro</text></navLabel>');
+            expect(ncx).toContain('<content src="Text/page_0000.xhtml"/>');
+            expect(ncx).toContain('<navPoint id="ch-2">');
+            expect(ncx).toContain('<navLabel><text>Chapter 2: Climax</text></navLabel>');
+            expect(ncx).toContain('<content src="Text/page_0005.xhtml"/>');
+
+            const nav = buildNav({ title: 'Manga Vol 1', chapters, pages });
+            expect(nav).toContain('<li><a href="Text/page_0000.xhtml">Chapter 1: Intro</a></li>');
+            expect(nav).toContain('<li><a href="Text/page_0005.xhtml">Chapter 2: Climax</a></li>');
+            expect(nav).toContain('<li><a href="Text/page_0000.xhtml">1</a></li>');
+            expect(nav).toContain('<li><a href="Text/page_0001.xhtml">2</a></li>');
+            expect(nav).toContain('<li><a href="Text/page_0005.xhtml">3</a></li>');
+        });
+
+        it('should map chapters with startIndex to target generated pageName in createEpub', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = [
+                { name: 'p1.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) },
+                { name: 'spread.jpg', async: async () => createMockBlob({ width: 2000, height: 1000 }) }, // split -> page 1, 2
+                { name: 'p2.jpg', async: async () => createMockBlob({ width: 1000, height: 1500 }) } // -> page 3
+            ];
+
+            await createEpub({
+                images: mockImages,
+                chapters: [
+                    { title: 'Chapter 1', startIndex: 0 },
+                    { title: 'Chapter 2', startIndex: 2 }
+                ],
+                title: 'Chapter Mapping Test',
+                author: 'Author',
+                isOptimizeEnabled: true,
+                jszipLib: MockJSZip
+            });
+
+            const ncx = filesCreated['OEBPS/toc.ncx'];
+            const nav = filesCreated['OEBPS/nav.xhtml'];
+
+            expect(ncx).toContain('<navPoint id="navPoint-1">');
+            expect(ncx).toContain('<navLabel><text>Chapter 1</text></navLabel>');
+            expect(ncx).toContain('<content src="Text/page_0000.xhtml"/>');
+
+            expect(ncx).toContain('<navPoint id="navPoint-2">');
+            expect(ncx).toContain('<navLabel><text>Chapter 2</text></navLabel>');
+            expect(ncx).toContain('<content src="Text/page_0003.xhtml"/>');
+
+            expect(nav).toContain('<li><a href="Text/page_0000.xhtml">Chapter 1</a></li>');
+            expect(nav).toContain('<li><a href="Text/page_0003.xhtml">Chapter 2</a></li>');
+        });
+
+        it('should process images concurrently in batches while preserving page order', async () => {
+            const { MockJSZip, filesCreated } = createMockZip();
+            const mockImages = Array.from({ length: 9 }, (_, i) => ({
+                name: `page_${i + 1}.jpg`,
+                async: async () => {
+                    // simulate variable network/disk latency
+                    await new Promise(resolve => setTimeout(resolve, (9 - i) * 5));
+                    return createMockBlob({ width: 1000, height: 1500 });
+                }
+            }));
+
+            await createEpub({
+                images: mockImages,
+                title: 'Concurrency Order Test',
+                author: 'Tester',
+                jszipLib: MockJSZip
+            });
+
+            for (let i = 0; i < 9; i++) {
+                const pageFile = `OEBPS/Text/page_${i.toString().padStart(4, '0')}.xhtml`;
+                expect(filesCreated[pageFile]).toBeDefined();
+                expect(filesCreated[pageFile]).toContain(`image_${i.toString().padStart(4, '0')}.jpg`);
+            }
         });
     });
 });
