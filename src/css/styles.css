@@ -283,3 +283,13 @@ button:disabled {
     border-radius: 5px;
     background: #fff;
 }
+
+.suboptions-group {
+    margin-left: 1rem;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--border-color, #ccc);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+

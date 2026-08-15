@@ -947,6 +947,18 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertIn('id="upscale-checkbox"', content)
         self.assertNotIn('id="kindle-pw12-checkbox"', content)
 
+    def test_index_html_spread_and_png_options(self):
+        index_path = REPO_ROOT / 'index.html'
+        content = index_path.read_text(encoding='utf-8')
+        self.assertIn('id="spread-mode-select"', content)
+        self.assertIn('id="spread-suboptions-group"', content)
+        self.assertIn('id="spread-no-rotate-checkbox"', content)
+        self.assertIn('id="spread-rotate-right-checkbox"', content)
+        self.assertIn('id="spread-position-select"', content)
+        self.assertIn('value="png"', content)
+        self.assertIn('value="png_8bit"', content)
+        self.assertIn('value="png_4bit"', content)
+
     def test_ui_controller_dom_binding(self):
         code = self.base_env + r"""
         import { UIController } from './src/js/ui/ui-controller.js';
@@ -964,7 +976,14 @@ class TestEpubBuilderIntegration(unittest.TestCase):
             'cover-page-input': { value: '1' },
             'cover-page-input-group': { style: {} },
             'cover-file-input-group': { style: {} },
-            'optimize-checkbox': { checked: false },
+            'spread-mode-select': { value: 'split', addEventListener: () => {} },
+            'spread-suboptions-group': { style: {} },
+            'spread-no-rotate-group': { style: {} },
+            'spread-no-rotate-checkbox': { checked: false, addEventListener: () => {} },
+            'spread-rotate-right-group': { style: {} },
+            'spread-rotate-right-checkbox': { checked: false },
+            'spread-position-group': { style: {} },
+            'spread-position-select': { value: 'after' },
             'direction-select': { value: 'ltr' },
             'format-select': { value: 'original', addEventListener: () => {} },
             'device-select': { value: 'kindle_pw11' },
@@ -990,7 +1009,10 @@ class TestEpubBuilderIntegration(unittest.TestCase):
             hasDeviceSelect: !!controller.deviceSelect,
             deviceSelectValue: controller.deviceSelect.value,
             hasUpscaleCheckbox: !!controller.upscaleCheckbox,
-            upscaleChecked: controller.upscaleCheckbox.checked
+            upscaleChecked: controller.upscaleCheckbox.checked,
+            hasSpreadModeSelect: !!controller.spreadModeSelect,
+            spreadModeValue: controller.spreadModeSelect.value,
+            hasSpreadSuboptionsGroup: !!controller.spreadSuboptionsGroup
         }));
         """
         data = run_js_eval(code)
@@ -998,6 +1020,116 @@ class TestEpubBuilderIntegration(unittest.TestCase):
         self.assertEqual(data['deviceSelectValue'], 'kindle_pw11')
         self.assertTrue(data['hasUpscaleCheckbox'])
         self.assertFalse(data['upscaleChecked'])
+        self.assertTrue(data['hasSpreadModeSelect'])
+        self.assertEqual(data['spreadModeValue'], 'split')
+        self.assertTrue(data['hasSpreadSuboptionsGroup'])
+
+    def test_ui_controller_spread_suboptions_visibility(self):
+        code = self.base_env + r"""
+        import { UIController } from './src/js/ui/ui-controller.js';
+
+        const elements = {
+            'drop-zone': { addEventListener: () => {}, classList: { add: () => {}, remove: () => {} } },
+            'file-input': { addEventListener: () => {} },
+            'convert-btn': { addEventListener: () => {}, disabled: false },
+            'progress-container': { style: {} },
+            'progress-fill': { style: {} },
+            'status-text': { textContent: '' },
+            'title-input': { value: 'My Book' },
+            'author-input': { value: 'My Author' },
+            'cover-input': { files: [] },
+            'cover-page-input': { value: '1' },
+            'cover-page-input-group': { style: {} },
+            'cover-file-input-group': { style: {} },
+            'spread-mode-select': { value: 'split', addEventListener: () => {} },
+            'spread-suboptions-group': { style: {} },
+            'spread-no-rotate-group': { style: {} },
+            'spread-no-rotate-checkbox': { checked: false, addEventListener: () => {} },
+            'spread-rotate-right-group': { style: {} },
+            'spread-rotate-right-checkbox': { checked: false },
+            'spread-position-group': { style: {} },
+            'spread-position-select': { value: 'after' },
+            'direction-select': { value: 'ltr' },
+            'format-select': { value: 'original', addEventListener: () => {} },
+            'device-select': { value: 'kindle_pw11' },
+            'upscale-checkbox': { checked: false },
+            'grayscale-checkbox': { checked: false },
+            'format-group': { style: {} },
+            'file-list': { innerHTML: '', style: {}, appendChild: () => {} },
+            'merge-group': { style: {} },
+            'merge-checkbox': { checked: false, disabled: false },
+            'quality-group': { style: {} },
+            'quality-input': { value: '85' },
+            'landscape-spread-checkbox': { checked: false },
+            'offset-first-page-checkbox': { checked: false }
+        };
+
+        globalThis.document = {
+            getElementById: (id) => elements[id] || null,
+            querySelectorAll: (sel) => []
+        };
+
+        const controller = new UIController();
+
+        // 1. Initial state ('split') -> suboptions hidden
+        const splitSubDisplay = elements['spread-suboptions-group'].style.display;
+
+        // 2. Mode 'off' -> suboptions hidden
+        elements['spread-mode-select'].value = 'off';
+        controller.updateSpreadSuboptions();
+        const offSubDisplay = elements['spread-suboptions-group'].style.display;
+
+        // 3. Mode 'rotate', noRotate=false -> suboptions flex, no-rotate flex, rotate-right flex, position none
+        elements['spread-mode-select'].value = 'rotate';
+        elements['spread-no-rotate-checkbox'].checked = false;
+        controller.updateSpreadSuboptions();
+        const rotateState1 = {
+            sub: elements['spread-suboptions-group'].style.display,
+            noRotate: elements['spread-no-rotate-group'].style.display,
+            rotateRight: elements['spread-rotate-right-group'].style.display,
+            position: elements['spread-position-group'].style.display
+        };
+
+        // 4. Mode 'rotate', noRotate=true -> rotate-right hidden
+        elements['spread-no-rotate-checkbox'].checked = true;
+        controller.updateSpreadSuboptions();
+        const rotateState2 = {
+            sub: elements['spread-suboptions-group'].style.display,
+            rotateRight: elements['spread-rotate-right-group'].style.display
+        };
+
+        // 5. Mode 'both', noRotate=false -> position shown (flex)
+        elements['spread-mode-select'].value = 'both';
+        elements['spread-no-rotate-checkbox'].checked = false;
+        controller.updateSpreadSuboptions();
+        const bothState1 = {
+            sub: elements['spread-suboptions-group'].style.display,
+            noRotate: elements['spread-no-rotate-group'].style.display,
+            rotateRight: elements['spread-rotate-right-group'].style.display,
+            position: elements['spread-position-group'].style.display
+        };
+
+        console.log(JSON.stringify({
+            splitSubDisplay,
+            offSubDisplay,
+            rotateState1,
+            rotateState2,
+            bothState1
+        }));
+        """
+        data = run_js_eval(code)
+        self.assertEqual(data['splitSubDisplay'], 'none')
+        self.assertEqual(data['offSubDisplay'], 'none')
+        self.assertEqual(data['rotateState1']['sub'], 'flex')
+        self.assertEqual(data['rotateState1']['noRotate'], 'flex')
+        self.assertEqual(data['rotateState1']['rotateRight'], 'flex')
+        self.assertEqual(data['rotateState1']['position'], 'none')
+        self.assertEqual(data['rotateState2']['sub'], 'flex')
+        self.assertEqual(data['rotateState2']['rotateRight'], 'none')
+        self.assertEqual(data['bothState1']['sub'], 'flex')
+        self.assertEqual(data['bothState1']['noRotate'], 'flex')
+        self.assertEqual(data['bothState1']['rotateRight'], 'flex')
+        self.assertEqual(data['bothState1']['position'], 'flex')
 
     def test_epub_spread_mode_split_ltr_and_rtl(self):
         code = self.base_env + r"""

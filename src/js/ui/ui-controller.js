@@ -1,4 +1,4 @@
-import { COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY, getDevicePreset } from '../modules/constants.js';
+import { COVER_SOURCES, OUTPUT_FORMATS, DEFAULT_JPEG_QUALITY, getDevicePreset, SPREAD_MODES, SPREAD_POSITIONS, ROTATION_DIRECTIONS } from '../modules/constants.js';
 import { extractImagesFromCbz } from '../modules/cbz-reader.js';
 import { createEpub } from '../modules/epub-builder.js';
 import { downloadBlob } from '../modules/file-downloader.js';
@@ -25,6 +25,14 @@ export class UIController {
         this.coverPageInputGroup = document.getElementById('cover-page-input-group');
         this.coverFileInputGroup = document.getElementById('cover-file-input-group');
         this.optimizeCheckbox = document.getElementById('optimize-checkbox');
+        this.spreadModeSelect = document.getElementById('spread-mode-select');
+        this.spreadSuboptionsGroup = document.getElementById('spread-suboptions-group');
+        this.spreadNoRotateGroup = document.getElementById('spread-no-rotate-group');
+        this.spreadNoRotateCheckbox = document.getElementById('spread-no-rotate-checkbox');
+        this.spreadRotateRightGroup = document.getElementById('spread-rotate-right-group');
+        this.spreadRotateRightCheckbox = document.getElementById('spread-rotate-right-checkbox');
+        this.spreadPositionGroup = document.getElementById('spread-position-group');
+        this.spreadPositionSelect = document.getElementById('spread-position-select');
         this.directionSelect = document.getElementById('direction-select');
         this.formatSelect = document.getElementById('format-select');
         this.deviceSelect = document.getElementById('device-select');
@@ -40,6 +48,27 @@ export class UIController {
         this.offsetFirstPageCheckbox = document.getElementById('offset-first-page-checkbox');
     }
 
+    updateSpreadSuboptions() {
+        if (!this.spreadModeSelect || !this.spreadSuboptionsGroup) return;
+
+        const mode = this.spreadModeSelect.value;
+        const noRotate = this.spreadNoRotateCheckbox ? this.spreadNoRotateCheckbox.checked : false;
+
+        if (mode === SPREAD_MODES.OFF || mode === SPREAD_MODES.SPLIT) {
+            this.spreadSuboptionsGroup.style.display = 'none';
+        } else if (mode === SPREAD_MODES.ROTATE) {
+            this.spreadSuboptionsGroup.style.display = 'flex';
+            if (this.spreadNoRotateGroup) this.spreadNoRotateGroup.style.display = 'flex';
+            if (this.spreadRotateRightGroup) this.spreadRotateRightGroup.style.display = noRotate ? 'none' : 'flex';
+            if (this.spreadPositionGroup) this.spreadPositionGroup.style.display = 'none';
+        } else if (mode === SPREAD_MODES.BOTH) {
+            this.spreadSuboptionsGroup.style.display = 'flex';
+            if (this.spreadNoRotateGroup) this.spreadNoRotateGroup.style.display = 'flex';
+            if (this.spreadRotateRightGroup) this.spreadRotateRightGroup.style.display = noRotate ? 'none' : 'flex';
+            if (this.spreadPositionGroup) this.spreadPositionGroup.style.display = 'flex';
+        }
+    }
+
     bindEvents() {
         // Cover source radio buttons
         this.coverSourceRadios.forEach((radio) => {
@@ -49,6 +78,15 @@ export class UIController {
                 if (this.coverFileInputGroup) this.coverFileInputGroup.style.display = isPage ? 'none' : 'flex';
             });
         });
+
+        // Spread mode change & no-rotate checkbox change
+        if (this.spreadModeSelect) {
+            this.spreadModeSelect.addEventListener('change', () => this.updateSpreadSuboptions());
+        }
+        if (this.spreadNoRotateCheckbox) {
+            this.spreadNoRotateCheckbox.addEventListener('change', () => this.updateSpreadSuboptions());
+        }
+        this.updateSpreadSuboptions();
 
         // Format select toggle for JPEG quality
         if (this.formatSelect && this.qualityGroup) {
@@ -196,7 +234,12 @@ export class UIController {
         this.convertBtn.disabled = true;
         const globalTitle = this.titleInput ? this.titleInput.value.trim() : '';
         const globalAuthor = (this.authorInput && this.authorInput.value.trim()) || 'Unknown Author';
-        const isOptimizeEnabled = this.optimizeCheckbox ? this.optimizeCheckbox.checked : false;
+        const spreadMode = this.spreadModeSelect
+            ? this.spreadModeSelect.value
+            : (this.optimizeCheckbox && this.optimizeCheckbox.checked ? SPREAD_MODES.SPLIT : SPREAD_MODES.OFF);
+        const spreadNoRotate = this.spreadNoRotateCheckbox ? this.spreadNoRotateCheckbox.checked : false;
+        const spreadRotateRight = this.spreadRotateRightCheckbox ? this.spreadRotateRightCheckbox.checked : false;
+        const spreadPosition = this.spreadPositionSelect ? this.spreadPositionSelect.value : SPREAD_POSITIONS.AFTER;
         const readingDirection = this.directionSelect ? this.directionSelect.value : 'ltr';
         const outputFormat = this.formatSelect ? this.formatSelect.value : 'original';
 
@@ -244,7 +287,10 @@ export class UIController {
                     images: allImages,
                     title: finalTitle,
                     author: globalAuthor,
-                    isOptimizeEnabled,
+                    spreadMode,
+                    spreadNoRotate,
+                    spreadRotateRight,
+                    spreadPosition,
                     readingDirection,
                     outputFormat,
                     customCoverFile,
@@ -280,7 +326,10 @@ export class UIController {
                         images,
                         title: finalTitle,
                         author: globalAuthor,
-                        isOptimizeEnabled,
+                        spreadMode,
+                        spreadNoRotate,
+                        spreadRotateRight,
+                        spreadPosition,
                         readingDirection,
                         outputFormat,
                         customCoverFile,

@@ -60,10 +60,32 @@
                 <input type="checkbox" id="merge-checkbox" disabled>
                 Merge into single EPUB
             </label>
-            <label class="checkbox-label">
-                <input type="checkbox" id="optimize-checkbox">
-                Split wide spreads
-            </label>
+            <div class="select-group" id="spread-mode-group">
+                <label for="spread-mode-select">Spread Splitter / Handling:</label>
+                <select id="spread-mode-select">
+                    <option value="off">Off (Do not split or rotate)</option>
+                    <option value="split" selected>Split into 2 pages</option>
+                    <option value="rotate">Rotate spread only</option>
+                    <option value="both">Split and include full spread</option>
+                </select>
+            </div>
+            <div id="spread-suboptions-group" class="suboptions-group" style="display: none;">
+                <label class="checkbox-label" id="spread-no-rotate-group">
+                    <input type="checkbox" id="spread-no-rotate-checkbox">
+                    Do not rotate wide spread
+                </label>
+                <label class="checkbox-label" id="spread-rotate-right-group">
+                    <input type="checkbox" id="spread-rotate-right-checkbox">
+                    Rotate clockwise (90° right)
+                </label>
+                <div class="select-group" id="spread-position-group" style="display: none;">
+                    <label for="spread-position-select">Wide spread position:</label>
+                    <select id="spread-position-select">
+                        <option value="after" selected>After split pages</option>
+                        <option value="before">Before split pages</option>
+                    </select>
+                </div>
+            </div>
             <div class="select-group">
                 <label for="direction-select">Reading Direction:</label>
                 <select id="direction-select">
@@ -71,11 +93,14 @@
                     <option value="rtl">Manga (Right-to-Left)</option>
                 </select>
             </div>
-                        <div class="select-group" id="format-group">
+            <div class="select-group" id="format-group">
                 <label for="format-select">Image Format:</label>
                 <select id="format-select">
                     <option value="original">Original Format</option>
                     <option value="jpeg">JPEG (Smaller size)</option>
+                    <option value="png">PNG (Standard 24/32-bit)</option>
+                    <option value="png_8bit">PNG 8-bit (256 grays)</option>
+                    <option value="png_4bit">PNG 4-bit (16 grays E-Ink)</option>
                 </select>
             </div>
             <div class="select-group" id="quality-group" style="display: none;">
